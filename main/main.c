@@ -11,6 +11,7 @@
 #include "nvs_flash.h"
 
 #include "wifi.h"
+#include "http_server.h"
 
 void app_main(void)
 {
@@ -23,5 +24,6 @@ void app_main(void)
     ESP_ERROR_CHECK(ret);
 
     wifi_init_softap();
+    start_http_server();
 
 }
