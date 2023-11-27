@@ -27,6 +27,7 @@
  */
 
 static const char *TAG = "HTTP_SERVER LIBRARY";
+static httpd_handle_t server = NULL;
 
 // /*================Method GET================*/
 // #if CONFIG_BASIC_AUTH
@@ -234,8 +235,10 @@ static const char *TAG = "HTTP_SERVER LIBRARY";
 
 /*================Method POST================*/
 /* An HTTP POST handler */
-static esp_err_t echo_post_handler(httpd_req_t *req)
-{
+
+void http_server_post(int tam, char *data);
+
+static esp_err_t echo_post_handler(httpd_req_t *req){
     char buf[100];
     int ret, remaining = req->content_len;
 
@@ -255,9 +258,10 @@ static esp_err_t echo_post_handler(httpd_req_t *req)
         remaining -= ret;
 
         /* Log data received */
-        ESP_LOGI(TAG, "=========== RECEIVED DATA ==========");
-        ESP_LOGI(TAG, "%.*s", ret, buf);
-        ESP_LOGI(TAG, "====================================");
+        http_server_receive_post(ret, &buf);
+        // ESP_LOGI(TAG, "=========== RECEIVED DATA ==========");
+        // ESP_LOGI(TAG, "%.*s", ret, buf);
+        // ESP_LOGI(TAG, "====================================");
     }
 
     // End response
@@ -269,7 +273,7 @@ static const httpd_uri_t echo = {
     .uri       = "/echo",
     .method    = HTTP_POST,
     .handler   = echo_post_handler,
-    .user_ctx  = NULL
+    .user_ctx  = NULL,
 };
 
 /* This handler allows the custom error handling functionality to be
@@ -406,9 +410,14 @@ static void connect_handler(void* arg, esp_event_base_t event_base,
 }
 
 void start_http_server(void){
-
-    static httpd_handle_t server = NULL;
+    // static httpd_handle_t server = NULL;
 
     /* Start the server for the first time */
     server = start_webserver();
+}
+
+void stop_http_server(void){
+
+    /* Stop the server for the first time */
+    stop_webserver(server);
 }
