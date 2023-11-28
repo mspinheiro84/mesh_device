@@ -1,2 +1,2 @@
-idf_component_register(SRCS "wifi_app.c" "mqtt_app.c" "mesh_netif.c" "mesh_app.c" "http_server.c" "main.c"
+idf_component_register(SRCS "nvs_app.c" "wifi_app.c" "mqtt_app.c" "mesh_netif.c" "mesh_app.c" "http_server.c" "main.c"
                     INCLUDE_DIRS "." "include")

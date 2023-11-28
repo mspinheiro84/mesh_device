@@ -18,11 +18,13 @@
 #include "esp_mac.h"
 #include "esp_mesh.h"
 #include "mesh_netif.h"
+// #include "nvs.h"
 
 #include "wifi_app.h"
 #include "http_server.h"
 #include "mesh_app.h"
 #include "mqtt_app.h"
+#include "nvs_app.h"
 
 /*******************************************************
  *                Constants
@@ -180,6 +182,11 @@ esp_err_t esp_mesh_comm_mqtt_task_start(void)
     return ESP_OK;
 }
 
+void clear_memory(){
+    nvs_app_clear("ssid");
+    nvs_app_clear("pass");
+}
+
 
 void app_main(void)
 {
@@ -196,14 +203,19 @@ void app_main(void)
 
     /*check se botão esta pressionado e */
     if (check_button_root()){
-        wifi_init_softap();
-        start_http_server();
+        
+        if (!nvs_app_get("ssid", &ssid[0]) || !nvs_app_get("pass", &pass[0])){
+            wifi_init_softap();
+            start_http_server();
 
-        while (1){
-            vTaskDelay(pdMS_TO_TICKS(500));
-            if(credencial_wifi){
-                wifi_stop();
-                break;
+            while (1){
+                vTaskDelay(pdMS_TO_TICKS(500));
+                if(credencial_wifi){
+                    wifi_stop();
+                    nvs_app_set("ssid", ssid);
+                    nvs_app_set("pass", pass);
+                    break;
+                }
             }
         }
     }

@@ -44,7 +44,7 @@ static mesh_addr_t s_route_table[CONFIG_MESH_ROUTE_TABLE_SIZE];
 static int s_route_table_size = 0;
 static SemaphoreHandle_t s_route_table_lock = NULL;
 static uint8_t s_mesh_tx_payload[CONFIG_MESH_ROUTE_TABLE_SIZE*6+1];
-static char *ssid_mesh, *pass_mesh;
+static char ssid_mesh[20], pass_mesh[20];
 
 static bool root = false;
 // static esp_netif_t *netif_sta = NULL;
@@ -165,7 +165,6 @@ void mesh_scan_done_handler(int num)
                      record.rssi);
             if(root){
                 if (!strcmp(ssid_mesh, (char *) record.ssid)) {
-                // if (!strcmp((char *)ssid_mesh, (char *) record.ssid)) {
                     parent_found = true;
                     memcpy(&parent_record, &record, sizeof(record));
                     my_type = MESH_ROOT;
@@ -430,10 +429,9 @@ void ip_event_handler(void *arg, esp_event_base_t event_base,
     mesh_app_got_ip();
 }
 
-void mesh_app(char *ssid, char *pass){
-    ssid_mesh = ssid;
-    pass_mesh = pass;
-
+void mesh_app(char ssid[], char pass[]){
+    strcpy((char *) &ssid_mesh, ssid);
+    strcpy((char *) &pass_mesh, pass);
     ESP_ERROR_CHECK(mesh_netifs_init(recv_cb));
 
     /*  wifi initialization */
@@ -453,17 +451,16 @@ void mesh_app(char *ssid, char *pass){
     /* router */
     cfg.channel = CONFIG_MESH_CHANNEL;
     cfg.router.ssid_len = strlen((char *)ssid_mesh);
-    memcpy((uint8_t *) &cfg.router.ssid, ssid_mesh, cfg.router.ssid_len);
-    memcpy((uint8_t *) &cfg.router.password, pass_mesh, strlen((char *)pass_mesh));
+    strcpy((char *) &cfg.router.ssid, ssid_mesh);
+    strcpy((char *) &cfg.router.password, pass_mesh);
+    // memcpy((uint8_t *) &cfg.router.ssid, ssid_mesh, cfg.router.ssid_len);
+    // memcpy((uint8_t *) &cfg.router.password, pass_mesh, strlen((char *)pass_mesh));
     /* mesh softAP */
     ESP_ERROR_CHECK(esp_mesh_set_ap_authmode(CONFIG_MESH_AP_AUTHMODE));
     cfg.mesh_ap.max_connection = CONFIG_MESH_AP_CONNECTIONS;
     cfg.mesh_ap.nonmesh_max_connection = CONFIG_MESH_NON_MESH_AP_CONNECTIONS;
     memcpy((uint8_t *) &cfg.mesh_ap.password, CONFIG_MESH_AP_PASSWD,
            strlen(CONFIG_MESH_AP_PASSWD));
-
-    ESP_LOGW(MESH_TAG, "SSID:%s", cfg.router.ssid);
-    ESP_LOGW(MESH_TAG, "PASS:%s", cfg.router.password);
     ESP_ERROR_CHECK(esp_mesh_set_config(&cfg));
     /* mesh start */
     ESP_ERROR_CHECK(esp_mesh_start());
