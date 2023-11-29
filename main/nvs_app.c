@@ -24,16 +24,6 @@ static const char *nameSpace = "memoriaESP";
 
 bool nvs_app_get(char *key, char *value)
 {
-    // // Initialize NVS
-    // esp_err_t err = nvs_flash_init();
-    // if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-    //     // NVS partition was truncated and needs to be erased
-    //     // Retry nvs_flash_init
-    //     ESP_ERROR_CHECK(nvs_flash_erase());
-    //     err = nvs_flash_init();
-    // }
-    // ESP_ERROR_CHECK( err );
-
     // Open
     size_t required_size;
     nvs_handle_t nvsHandle;
@@ -48,6 +38,8 @@ bool nvs_app_get(char *key, char *value)
 
         // Read
         ESP_LOGI(TAG, "Reading %s from NVS ... ", key);
+        err = nvs_get_str(nvsHandle, key, value, &required_size);
+        value = (char *) calloc(required_size, sizeof(char));
         err = nvs_get_str(nvsHandle, key, value, &required_size);
         switch (err) {
             case ESP_OK:

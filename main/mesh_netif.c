@@ -39,7 +39,7 @@ typedef struct mesh_netif_driver {
 /*******************************************************
  *                Constants
  *******************************************************/
-static const char* TAG = "MESH_NETIF";
+static const char* TAG = "MESH_NETIF LIBRARY";
 const esp_netif_ip_info_t g_mesh_netif_subnet_ip = {        // mesh subnet IP info
         .ip = { .addr = ESP_IP4TOADDR( 10, 0, 0, 1) },
         .gw = { .addr = ESP_IP4TOADDR( 10, 0, 0, 1) },
@@ -490,5 +490,11 @@ esp_err_t mesh_netifs_stop(void)
 uint8_t* mesh_netif_get_station_mac(void)
 {
     mesh_netif_driver_t mesh =  esp_netif_get_io_driver(netif_sta);
+    return mesh->sta_mac_addr;
+}
+
+uint8_t* mesh_netif_get_ap_mac(void)
+{
+    mesh_netif_driver_t mesh =  esp_netif_get_io_driver(netif_ap);
     return mesh->sta_mac_addr;
 }

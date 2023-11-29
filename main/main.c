@@ -34,7 +34,9 @@ static const char *TAG = "MAIN";
 static bool credencial_wifi = false;
 static char ssid[] = "MESHSSID";
 static char pass[] = "MESHPASSWORD";
-static bool is_running = true;
+static esp_ip4_addr_t s_current_ip;
+static char addrMac[6*3+1]; // MAC addr size + terminator
+static char *serialNumber;
 
 /*******************************************************
  *                Macros
@@ -81,8 +83,13 @@ void http_server_receive_post(int tam, char *data){
 
 esp_err_t mesh_check_cmd_app(uint8_t cmd, uint8_t *data){
     if (cmd == CMD_KEYPRESSED) {
-        ESP_LOGW(TAG, "Keypressed detected on node: "
-            MACSTR, MAC2STR(data));
+        char dataMac[3*6+1];
+        sprintf(dataMac, MACSTR, MAC2STR(data));
+        if (strcmp(dataMac, addrMac)){
+            ESP_LOGW(TAG, "Keypressed detected on node: "
+                MACSTR, MAC2STR(data));
+            return ESP_OK;
+        }
         return ESP_OK;
     } else {
         return ESP_FAIL;
@@ -133,22 +140,28 @@ bool check_button_root(void){
 
 static void check_button(void* args)
 {
+    char topic[33];
+    char payload[44];
     static bool old_level = true;
     bool new_level;
-    bool run_check_button = true;
-    while (run_check_button) {
+    uint8_t *my_mac = (esp_mesh_is_root()) ? mesh_netif_get_ap_mac() : mesh_netif_get_station_mac();
+    // snprintf(addrMac, sizeof(addrMac),MACSTR, MAC2STR(my_mac));
+    sprintf(payload, "layer:%d IP:" IPSTR, esp_mesh_get_layer(), IP2STR(&s_current_ip));
+    sprintf(topic, "mesh/%.*s/toDevice", 18, addrMac);
+
+    uint8_t data_to_send[6+1] = { CMD_KEYPRESSED, };
+    memcpy(data_to_send + 1, my_mac, 6);
+    while (1) {
         new_level = gpio_get_level(BUTTON_GPIO);
         if (!new_level && old_level) {
-            if (!esp_mesh_is_root()) {
-                ESP_LOGW(TAG, "Key pressed!");                
-                uint8_t data_to_send[6+1] = { CMD_KEYPRESSED, };
-                uint8_t *my_mac = mesh_netif_get_station_mac();
-                memcpy(data_to_send + 1, my_mac, 6);
-                char print[6*3+1]; // MAC addr size + terminator
-                snprintf(print, sizeof(print),MACSTR, MAC2STR(my_mac));
-                mqtt_app_publish("/topic/ip_mesh/key_pressed", print);                
-                mesh_send_app(-1, data_to_send, 7);
-            }
+            ESP_LOGW(TAG, "Key pressed!");
+            /*mensage via mqtt*/
+            ESP_LOGI(TAG, "Tried to publish in %s", topic);
+            mqtt_app_publish(topic, payload);
+
+            /*mensage via mesh*/
+            mesh_send_app(-1, data_to_send, 7);
+            
         }
         old_level = new_level;
         vTaskDelay(50 / portTICK_PERIOD_MS);
@@ -156,37 +169,38 @@ static void check_button(void* args)
     vTaskDelete(NULL);
 }
 
-void esp_mesh_mqtt_task(void *arg)
-{
-    is_running = true;
-    char *print;
-    mqtt_app_start();
-    while (is_running) {
-        esp_ip4_addr_t myIp = mesh_app_get_ip();
-        asprintf(&print, "layer:%d IP:" IPSTR, esp_mesh_get_layer(), IP2STR(&myIp));
-        ESP_LOGI(TAG, "Tried to publish %s", print);
-        mqtt_app_publish("/topic/ip_mesh", print);
-        free(print);
-        if (esp_mesh_is_root()) {
-            mesh_send_app(-1, NULL, 0);
-        }
-        vTaskDelay(2 * 3000 / portTICK_PERIOD_MS);
-    }
-    vTaskDelete(NULL);
-}
-
 esp_err_t esp_mesh_comm_mqtt_task_start(void)
 {
-    xTaskCreate(esp_mesh_mqtt_task, "mqtt task", 3072, NULL, 5, NULL);
+    char *payload;
+    char *topic;
+    mqtt_app_start();
+    s_current_ip = mesh_app_get_ip();    
+    uint8_t *my_mac = (esp_mesh_is_root()) ? mesh_netif_get_ap_mac() : mesh_netif_get_station_mac();
+    snprintf(addrMac, sizeof(addrMac),MACSTR, MAC2STR(my_mac));
+    // asprintf(&payload, "layer:%d IP:" IPSTR, esp_mesh_get_layer(), IP2STR(&s_current_ip));
+    asprintf(&payload, "{\"t\":%.*s,\"sn\":%s}", 18, addrMac, serialNumber);
+    asprintf(&topic, "mesh/%.*s/toCloud", 18, addrMac);
+    ESP_LOGI(TAG, "Tried to publish %s", payload);
+    mqtt_app_publish(topic, payload);
+    free(payload);
+    free(topic);
+    
+    // if (esp_mesh_is_root()) {
+    //     mesh_send_app(-1, NULL, 0);
+    // }
+
     xTaskCreate(check_button, "check button task", 3072, NULL, 5, NULL);
     return ESP_OK;
 }
 
-void clear_memory(){
+void clear_credencial_wifi(){
     nvs_app_clear("ssid");
     nvs_app_clear("pass");
 }
 
+// void registro_serial(){
+//     nvs_app_set("sn", "SW0000000001");
+// }
 
 void app_main(void)
 {
@@ -201,10 +215,13 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
+    // clear_credencial_wifi();
+    // registro_serial();
+    serialNumber = (char *)calloc(13, sizeof(char));
+    nvs_app_get("sn", serialNumber);
     /*check se botão esta pressionado e */
     if (check_button_root()){
-        
-        if (!nvs_app_get("ssid", &ssid[0]) || !nvs_app_get("pass", &pass[0])){
+        if (!nvs_app_get("ssid", ssid) || !nvs_app_get("pass", pass)){
             wifi_init_softap();
             start_http_server();
 
@@ -220,4 +237,5 @@ void app_main(void)
         }
     }
     mesh_app(ssid, pass);
+
 }

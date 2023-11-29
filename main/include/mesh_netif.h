@@ -75,3 +75,13 @@ esp_err_t mesh_netif_start_root_ap(bool is_root, uint32_t dns_addr);
  * @return Pointer to MAC address
  */
 uint8_t* mesh_netif_get_station_mac(void);
+
+/**
+ * @brief Returns MAC address of the AP
+ *
+ * Used mainly for checking root addresses of the peers in routing table
+ * to avoid sending data to oneself
+ *
+ * @return Pointer to MAC address
+ */
+uint8_t* mesh_netif_get_ap_mac(void);
