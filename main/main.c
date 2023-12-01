@@ -25,6 +25,7 @@
 #include "mesh_app.h"
 #include "mqtt_app.h"
 #include "nvs_app.h"
+#include "ota_app.h"
 
 /*******************************************************
  *                Constants
@@ -162,6 +163,8 @@ static void check_button(void* args)
             /*mensage via mesh*/
             mesh_send_app(-1, data_to_send, 7);
             
+            do_firmware_upgrade();
+
         }
         old_level = new_level;
         vTaskDelay(50 / portTICK_PERIOD_MS);
@@ -199,7 +202,7 @@ void clear_credencial_wifi(){
 }
 
 // void registro_serial(){
-//     nvs_app_set("sn", "SW0000000001");
+//     nvs_app_set("sn", "SW0000000002");
 // }
 
 void app_main(void)

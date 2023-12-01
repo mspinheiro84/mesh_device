@@ -153,5 +153,13 @@ menu "Example Configuration"
             The client's password which used for basic authenticate.
 
 
+#  ======== Configuration HTTP Server ======== 
+    config FIRMWARE_UPGRADE_URL
+        string "HTTP server firmware"
+        default "192.168.140.106\ftp\firmware\device_mesh.bin"
+        help
+            Target http server host-name for the example to use.
+
+
 endmenu
 
