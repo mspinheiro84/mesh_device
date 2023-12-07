@@ -5,7 +5,6 @@
 #include "esp_err.h"
 #include "esp_https_ota.h"
 
-
 static const char *TAG = "OTA_APP LIBRARY";
 
 /* Event handler for catching system events */
@@ -49,7 +48,6 @@ esp_err_t do_firmware_upgrade(void)
 {
     esp_http_client_config_t config = {
         .url = "http://192.168.140.107/ftp/firmware/device_mesh.bin",
-        // .cert_len = 0,
         .cert_pem = (char *)"server_cert_pem_start",
         // .username = "esp",
         // .password = "123456",
@@ -58,10 +56,8 @@ esp_err_t do_firmware_upgrade(void)
         .http_config = &config,
     };
     esp_err_t ret = esp_https_ota(&ota_config);
-    ESP_LOGW(TAG, "%s", config.url);
     esp_event_handler_register(ESP_HTTPS_OTA_EVENT, ESP_EVENT_ANY_ID, &ota_event_handler, NULL);
     if (ret == ESP_OK) {
-        ESP_LOGW(TAG, "Reiniciando....");
         esp_restart();
     } else {
         return ESP_FAIL;

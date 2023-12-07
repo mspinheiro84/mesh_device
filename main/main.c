@@ -7,8 +7,9 @@
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include "freertos/semphr.h"
+#include "freertos/timers.h"
 
-/*include do ESP32*/
+/*includes do ESP32*/
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -20,12 +21,15 @@
 #include "mesh_netif.h"
 // #include "nvs.h"
 
+/*includes do Projeto*/
 #include "wifi_app.h"
 #include "http_server.h"
 #include "mesh_app.h"
 #include "mqtt_app.h"
 #include "nvs_app.h"
 #include "ota_app.h"
+#include "sensorZmpt101b.h"
+#include "sensorHall50.h"
 
 /*******************************************************
  *                Constants
@@ -38,6 +42,7 @@ static char pass[] = "MESHPASSWORD";
 static esp_ip4_addr_t s_current_ip;
 static char addrMac[6*3+1]; // MAC addr size + terminator
 static char *serialNumber;
+TaskHandle_t xReadCorrenteHandle;
 
 /*******************************************************
  *                Macros
@@ -56,6 +61,27 @@ static char *serialNumber;
  *                Declarações
  *******************************************************/
 esp_err_t esp_mesh_comm_mqtt_task_start(void);
+void mesh_app_disconnected(void){}
+
+
+static void readCorrente(void *pvParameters){
+    float corrente = 0, tensao = 0;
+    sensorHall50_config(6, NULL);
+    sensorZmpt101b_config(7, sensorHall50_check());
+
+    while (1)
+    {
+        ulTaskNotifyTake(pdTRUE, (TickType_t) portMAX_DELAY);
+        corrente =  sensorHall50_read();
+        tensao = sensorZmpt101b_read();
+        ESP_LOGW(TAG, "Leitura realizada %.1fA, %.1fV", corrente, tensao);
+    }
+    
+}
+
+static void readS(TimerHandle_t xReadHandle){
+    xTaskNotifyGive(xReadCorrenteHandle);
+}
 
 void http_server_receive_post(int tam, char *data){
     int pos;
@@ -100,9 +126,6 @@ esp_err_t mesh_check_cmd_app(uint8_t cmd, uint8_t *data){
 void mesh_app_got_ip(void){
     esp_mesh_comm_mqtt_task_start();
 }
-
-void mesh_app_disconnected(void){}
-
 
 static void initialise_gpio(void)
 {
@@ -163,7 +186,7 @@ static void check_button(void* args)
             /*mensage via mesh*/
             mesh_send_app(-1, data_to_send, 7);
             
-            do_firmware_upgrade();
+            // do_firmware_upgrade();
 
         }
         old_level = new_level;
@@ -174,6 +197,7 @@ static void check_button(void* args)
 
 esp_err_t esp_mesh_comm_mqtt_task_start(void)
 {
+    TimerHandle_t xReadHandle;
     char *payload;
     char *topic;
     mqtt_app_start();
@@ -193,6 +217,16 @@ esp_err_t esp_mesh_comm_mqtt_task_start(void)
     // }
 
     xTaskCreate(check_button, "check button task", 3072, NULL, 5, NULL);
+    // xTaskCreate(timeNow, "TIME_OCLOCK", 2048, NULL, 1, NULL);
+    xTaskCreate(readCorrente, "READ_CORRENTE", 2048, NULL, tskIDLE_PRIORITY, &xReadCorrenteHandle);
+    xReadHandle = xTimerCreate("READ", pdMS_TO_TICKS(5000), pdTRUE, NULL, &readS);
+
+
+    if (xReadHandle != NULL){
+        xTimerStart(xReadHandle, 0);
+    } else {
+        ESP_LOGE(TAG, "Não foi possivel criar a taskTimer");
+    }
     return ESP_OK;
 }
 
@@ -239,6 +273,5 @@ void app_main(void)
             }
         }
     }
-    mesh_app(ssid, pass);
-
+    mesh_app(ssid, pass);    
 }

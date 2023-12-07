@@ -264,7 +264,7 @@ void mesh_event_handler(void *arg, esp_event_base_t event_base,
         ESP_LOGW(TAG, "<MESH_EVENT_ROUTING_TABLE_ADD>add %d, new:%d",
                  routing_table->rt_size_change,
                  routing_table->rt_size_new);
-                //  mesh_send_app(-1, NULL, 0);
+                 mesh_send_app(-1, NULL, 0);
     }
     break;
     case MESH_EVENT_ROUTING_TABLE_REMOVE: {
