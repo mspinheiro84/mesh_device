@@ -9,9 +9,9 @@ uint8_t channelZmpt;
 
 /*===================== Parameter Sensor Hall 50 =====================*/
 
-static int offset = 1000;     //offset do sensor
-static int diff = 10;         //Queda de tensão
-static int atten = 40;        //40(V/V) 
+static int offsetZmpt = 1000;     //offset do sensor
+static int diffZmpt = 10;         //Queda de tensão
+static int attenZmpt = 40;        //40(V/V) 
 
 void* sensorZmpt101b_check(void){
     void *adc_handle = adc_check();
@@ -27,7 +27,7 @@ float sensorZmpt101b_read(void){
     int voltage_in;
     float voltage_out;
     adc_read(&voltage_in, channelZmpt);
-    voltage_out = (float)((voltage_in - offset)*atten + diff)/1000;
+    voltage_out = (float)((voltage_in - offsetZmpt)*attenZmpt + diffZmpt)/1000;
     if(voltage_out > 50.0){
         ESP_LOGE(TAG, "Erro na leitura da voltage_out. %.1fA Acima do limite de 50A", voltage_out);
     }

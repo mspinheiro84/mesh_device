@@ -22,12 +22,12 @@ static const char *TAG = "NVS_APP LIBRARY";
 static const char *nameSpace = "memoriaESP";
 
 
-bool nvs_app_get(char *key, char *value)
+bool nvs_app_get(char *key, void *value, char tipo)
 {
     // Open
     size_t required_size;
     nvs_handle_t nvsHandle;
-    ESP_LOGI(TAG, "Opening Non-Volatile Storage (NVS) handle... ");
+    // ESP_LOGI(TAG, "Opening Non-Volatile Storage (NVS) handle... ");
     esp_err_t err = nvs_open(nameSpace, NVS_READWRITE, &nvsHandle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Error (%s) opening NVS handle!\n", esp_err_to_name(err));
@@ -37,13 +37,21 @@ bool nvs_app_get(char *key, char *value)
         // printf("Done\n");
 
         // Read
-        ESP_LOGI(TAG, "Reading %s from NVS ... ", key);
-        err = nvs_get_str(nvsHandle, key, value, &required_size);
-        value = (char *) calloc(required_size, sizeof(char));
-        err = nvs_get_str(nvsHandle, key, value, &required_size);
+        // ESP_LOGI(TAG, "Reading %s from NVS ... ", key);
+
+        if (tipo == 's'){
+            // printf("Updating restart counter in NVS ... ");
+            err = nvs_get_str(nvsHandle, key, value, &required_size);
+            value = (char *) calloc(required_size, sizeof(char));
+            err = nvs_get_str(nvsHandle, key, value, &required_size);
+        } else {
+            // printf("Updating restart counter in NVS ... ");
+            err = nvs_get_i16(nvsHandle, key, value);
+        }
         switch (err) {
             case ESP_OK:
-                ESP_LOGI(TAG, "Done. %s: %s", key, value);
+                // if (tipo == 's') {ESP_LOGI(TAG, "Done. %s: %s", key, (char *)value);
+                // }else{ int temp = * (int*)value; ESP_LOGI(TAG, "Done. %s: %d", key, temp);}
                 // printf("Done\n");
                 // printf("Restart counter = %d\n", restart_counter);
                 break;
@@ -65,10 +73,10 @@ bool nvs_app_get(char *key, char *value)
     }
 }
 
-void nvs_app_set(char *key, char *value)
+void nvs_app_set(char *key, void *value, char tipo)
 {
     nvs_handle_t nvsHandle;
-    ESP_LOGI(TAG, "Opening Non-Volatile Storage (NVS) handle... ");
+    // ESP_LOGI(TAG, "Opening Non-Volatile Storage (NVS) handle... ");
     esp_err_t err = nvs_open(nameSpace, NVS_READWRITE, &nvsHandle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Error (%s) opening NVS handle!\n", esp_err_to_name(err));
@@ -77,28 +85,30 @@ void nvs_app_set(char *key, char *value)
     } else {
 
         // Write
-        ESP_LOGI(TAG, "Updating %s in NVS %s ... ", key, value);
-        // printf("Updating restart counter in NVS ... ");
-        err = nvs_set_str(nvsHandle, key, value);
+        if (tipo == 's'){
+            // ESP_LOGI(TAG, "Updating %s in NVS %s ... ", key, (char *) value);
+            // printf("Updating restart counter in NVS ... ");
+            err = nvs_set_str(nvsHandle, key, value);
+        } else {
+            int *valor = (int *)value;
+            // ESP_LOGI(TAG, "Updating %s in NVS %d ... ", key,*valor);
+            // printf("Updating restart counter in NVS ... ");
+            err = nvs_set_i16(nvsHandle, key, *valor);
+        }
         if (err == ESP_OK) {
-            ESP_LOGI(TAG, "Committing updates in NVS ... ");
+            // ESP_LOGI(TAG, "Committing updates in NVS ... ");
             err = nvs_commit(nvsHandle);
             if (err == ESP_OK){
-                ESP_LOGI(TAG, "Done!");
+                // ESP_LOGI(TAG, "Done!");
                 nvs_close(nvsHandle);
                 return;
             }
         }
-        ESP_LOGE(TAG, "Failed!");        
+        ESP_LOGE(TAG, "Failed!");
         // Close
         nvs_close(nvsHandle);
         // printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
 
-        // Commit written value.
-        // After setting any values, nvs_commit() must be called to ensure changes are written
-        // to flash storage. Implementations may write to storage at other times,
-        // // but this is not guaranteed.
-        // printf("Committing updates in NVS ... ");
     }
 }
 

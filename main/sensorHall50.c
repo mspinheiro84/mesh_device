@@ -8,9 +8,9 @@ const static char *TAG = "SENSOR_HALL50 LIBRARY";
 
 /*===================== Parameter Sensor Hall 50 =====================*/
 
-static int offset = 1000;     //offset do sensor
-static int diff = 10;         //Queda de tensão
-static int sensitivity = 40;  //40(mV/A) 
+static int offsetHall = 1000;     //offset do sensor
+static int diffHall = 10;         //Queda de tensão
+static int sensitivityHall = 40;  //40(mV/A) 
 uint8_t channelHall;
 
 void* sensorHall50_check(void){
@@ -27,7 +27,7 @@ float sensorHall50_read(void){
     int voltage;
     float corrente;
     adc_read(&voltage, channelHall);
-    corrente = (float)(voltage - offset)/sensitivity + diff;
+    corrente = (float)(voltage - offsetHall)/sensitivityHall + diffHall;
     if(corrente > 50.0){
         ESP_LOGE(TAG, "Erro na leitura da corrente. %.1fA Acima do limite de 50A", corrente);
     }

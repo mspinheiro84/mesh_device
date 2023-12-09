@@ -39,7 +39,6 @@ void* adc_check(void){
 void adc_config(uint8_t channel, void* _adc_handle){
     // channel = (adc_channel_t)_channel;
     if (_adc_handle == NULL) {
-        ESP_LOGW(TAG, "igual ao NULL");
         //-------------ADC Init---------------//
         adc_oneshot_unit_init_cfg_t init_config = {
             .unit_id = ADC_UNIT,
@@ -48,7 +47,6 @@ void adc_config(uint8_t channel, void* _adc_handle){
         ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config, &adc_handle));
         // ESP_LOGW(TAG, "Um dado do adc_handle %d", adc_handle);
     } else {
-        ESP_LOGW(TAG, "diferente de NULL");
         adc_handle = (adc_oneshot_unit_handle_t) _adc_handle;
     }
 
@@ -70,9 +68,7 @@ uint8_t adc_read(int *voltage, uint8_t channel){
         ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc_cali_handle, adc_raw, voltage));
         // ESP_LOGI(TAG, "ADC%d Channel[%d] Cali Voltage: %d mV", ADC_UNIT + 1, channel, *voltage);
     }
-    ESP_LOGW(TAG, "Teste - Voltagem medida %d", *voltage);
     return adc_raw;
-    // vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
 void adc_deinit(void){
