@@ -42,7 +42,7 @@ static char pass[] = "MESHPASSWORD";
 static esp_ip4_addr_t s_current_ip;
 static char addrMac[6*3+1]; // MAC addr size + terminator
 static char *serialNumber;
-TaskHandle_t xReadCorrenteHandle;
+TaskHandle_t xReadSensorHandle, xSendSensorHandle;
 
 /*******************************************************
  *                Macros
@@ -50,6 +50,8 @@ TaskHandle_t xReadCorrenteHandle;
 
 #define BUTTON_GPIO     13
 #define LED_GPIO        2
+#define TAG_VOLTAGE     "v"
+#define TAG_AMPERE      "a"
 
 // commands for internal mesh communication:
 // <CMD> <PAYLOAD>, where CMD is one character, payload is variable dep. on command
@@ -63,59 +65,76 @@ TaskHandle_t xReadCorrenteHandle;
 esp_err_t esp_mesh_comm_mqtt_task_start(void);
 void mesh_app_disconnected(void){}
 
-void timeRTC(int cont){
+static void sendSensor(void *pvParameters){
     static time_t now;
-    static struct tm timeinfo;
-    char hora[9];
     time(&now);
     //Set timezone to Brazil Standard Time
     setenv("TZ", "UTC+3", 1);
     tzset();
-    localtime_r(&now, &timeinfo);
-    // // Is time set? If not, tm_year will be (1970 - 1900).
-    // if (timeinfo.tm_year < (2022 - 1900)) {
-    //     ESP_LOGI(TAG, "Time is not set yet. Connecting to WiFi and getting time over NTP.");
-    //     obtain_time();
-    //     // update 'now' variable with current time
-    //     time(&now);
-    // }
-    // strftime(data, sizeof(data), "%a %d/%m/%Y", &timeinfo);
-    // printf("\nData: %s\n", data);
-    strftime(hora, sizeof(hora), "%X", &timeinfo);
-    printf("\nHorário no Brasil: %s\n\n", hora);
+    while(1){
+        static struct tm timeinfo;
+        char hora[9];
+        time(&now);
+        localtime_r(&now, &timeinfo);
+        // // Is time set? If not, tm_year will be (1970 - 1900).
+        // if (timeinfo.tm_year < (2022 - 1900)) {
+        //     ESP_LOGI(TAG, "Time is not set yet. Connecting to WiFi and getting time over NTP.");
+        //     obtain_time();
+        //     // update 'now' variable with current time
+        //     time(&now);
+        // }
+        // strftime(data, sizeof(data), "%a %d/%m/%Y", &timeinfo);
+        // printf("\nData: %s\n", data);
 
+        ulTaskNotifyTake(pdTRUE, (TickType_t) portMAX_DELAY);
 
-    char topic[33];
-    char payload[44];
-    sprintf(topic, "mesh/%.*s/toDevice", 18, addrMac);        
-    // char keyCont[5] = "cont";
-    char keyVoltagem[5] = "v";
-    char keyAmperes[5] = "a";
-    int tensao, corrente;
-    for (int i = 1; i <= cont; i++){
-        strcpy(keyVoltagem, "v");
-        strcpy(keyAmperes, "a");
-        __itoa(i, &keyVoltagem[1], 10);
-        __itoa(i, &keyAmperes[1], 10);
-        tensao = 0;
-        corrente = 0;
-        nvs_app_get(keyAmperes, &corrente, 'i');
-        nvs_app_get(keyVoltagem, &tensao, 'i');
-        sprintf(payload, "{\"sn\":%s,\"sensores\":\"t\":%d,\"c\":%d}",serialNumber, tensao, corrente);
-        mqtt_app_publish(topic, payload);
+        strftime(hora, sizeof(hora), "%X", &timeinfo);
+        printf("\nHorário no Brasil: %s\n\n", hora);
+
+        nvs_stats_t nvs_stats;
+        nvs_get_stats(NULL, &nvs_stats);
+        printf("Count: UsedEntries = (%d), FreeEntries = (%d), AllEntries = (%d)\n",
+                nvs_stats.used_entries, nvs_stats.free_entries, nvs_stats.total_entries);            
+
+        char topic[33];
+        char payload[54];
+        sprintf(topic, "mesh/%.*s/toDevice", 18, addrMac);
+        char keyVoltagem[5] = TAG_VOLTAGE;
+        char keyAmperes[5] = TAG_AMPERE;
+        char keyCont[5] = "cont";
+        int cont;
+        nvs_app_get(keyCont, &cont, 'i');
+        int aux = 0;
+        nvs_app_set(keyCont, &aux, 'i');
+        int tensao, corrente;
+        ESP_LOGI(TAG, "Send mqtt lot!");
+        for (int i = 1; i <= cont; i++){
+            strcpy(keyVoltagem, TAG_VOLTAGE);
+            strcpy(keyAmperes, TAG_AMPERE);
+            __itoa(i, &keyVoltagem[1], 10);
+            __itoa(i, &keyAmperes[1], 10);
+            tensao = 0;
+            corrente = 0;
+            nvs_app_get(keyAmperes, &corrente, 'i');
+            nvs_app_get(keyVoltagem, &tensao, 'i');
+            sprintf(payload, "{\"sn\":\"%s\",\"s\":{\"%s\":%d,\"%s\":%d}}", serialNumber ,TAG_VOLTAGE, tensao, TAG_AMPERE, corrente);
+            mqtt_app_publish(topic, payload);
+            vTaskDelay(pdMS_TO_TICKS(500));
+        }
     }
+
 }
 
 
 
-static void readCorrente(void *pvParameters){
+static void readSensor(void *pvParameters){
     int corrente = 0, tensao = 0;
     sensorHall50_config(6, NULL);
     sensorZmpt101b_config(7, sensorHall50_check());
     int cont = 0;
     char keyCont[5] = "cont";
-    char keyVoltagem[5] = "v";
-    char keyAmperes[5] = "a";
+    char keyVoltagem[5] = TAG_VOLTAGE;
+    char keyAmperes[5] = TAG_AMPERE;
 
     while (1)
     {
@@ -123,27 +142,27 @@ static void readCorrente(void *pvParameters){
         /*Leitura dos sensores*/
         corrente = (int) sensorHall50_read()*100;
         tensao = (int) sensorZmpt101b_read()*100;
-        ESP_LOGW(TAG, "Leitura realizada %dA, %dV", corrente, tensao);
+        // ESP_LOGW(TAG, "Leitura realizada %dA, %dV", corrente, tensao);
 
         /*Gravação das leituras na memória: contador, leitura da corrente, leitura da tensão*/
         nvs_app_get(keyCont, &cont, 'i');
         cont++;
         __itoa(cont, &keyVoltagem[1], 10);
         __itoa(cont, &keyAmperes[1], 10);
-        ESP_LOGW(TAG, "Teste - Contador %d, keyVoltagem %s", cont, keyVoltagem);
         nvs_app_set(keyCont, &cont, 'i');
         nvs_app_set(keyAmperes, &corrente, 'i');
         nvs_app_set(keyVoltagem, &tensao, 'i');
-        // if (cont == 10){
-        //     cont == 0;
-        //     nvs_app_set(keyCont, &cont, 'i');
-        // }
+        
+        if (cont>14){
+            xTaskNotifyGive(xSendSensorHandle);
+            // timeRTC();
+        }
     }
     
 }
 
 static void readS(TimerHandle_t xReadHandle){
-    xTaskNotifyGive(xReadCorrenteHandle);
+    xTaskNotifyGive(xReadSensorHandle);
 }
 
 void http_server_receive_post(int tam, char *data){
@@ -254,21 +273,6 @@ static void check_button(void* args)
         }
         old_level = new_level;
         vTaskDelay(50 / portTICK_PERIOD_MS);
-
-
-        char keyCont[5] = "cont";
-        int cont = 0;
-        nvs_app_get(keyCont, &cont, 'i');
-        if (cont>15){
-            nvs_stats_t nvs_stats;
-            nvs_get_stats(NULL, &nvs_stats);
-            printf("Count: UsedEntries = (%d), FreeEntries = (%d), AllEntries = (%d)\n",
-                    nvs_stats.used_entries, nvs_stats.free_entries, nvs_stats.total_entries);
-            timeRTC(cont);
-            cont = 0;
-            nvs_app_set(keyCont, &cont, 'i');
-        }
-
     }
     vTaskDelete(NULL);
 }
@@ -283,7 +287,7 @@ esp_err_t esp_mesh_comm_mqtt_task_start(void)
     uint8_t *my_mac = (esp_mesh_is_root()) ? mesh_netif_get_ap_mac() : mesh_netif_get_station_mac();
     snprintf(addrMac, sizeof(addrMac),MACSTR, MAC2STR(my_mac));
     // asprintf(&payload, "layer:%d IP:" IPSTR, esp_mesh_get_layer(), IP2STR(&s_current_ip));
-    asprintf(&payload, "{\"t\":%.*s,\"sn\":%s}", 18, addrMac, serialNumber);
+    asprintf(&payload, "{\"t\":\"%.*s\",\"sn\":\"%s\"}", 18, addrMac, serialNumber);
     asprintf(&topic, "mesh/%.*s/toCloud", 18, addrMac);
     ESP_LOGI(TAG, "Tried to publish %s", payload);
     mqtt_app_publish(topic, payload);
@@ -292,7 +296,8 @@ esp_err_t esp_mesh_comm_mqtt_task_start(void)
     
     xTaskCreate(check_button, "check button task", 3072, NULL, 5, NULL);
     // xTaskCreate(timeNow, "TIME_OCLOCK", 2048, NULL, 1, NULL);
-    xTaskCreate(readCorrente, "READ_CORRENTE", 2048, NULL, tskIDLE_PRIORITY, &xReadCorrenteHandle);
+    xTaskCreate(sendSensor, "SEND_SENSOR", 2048, NULL, tskIDLE_PRIORITY, &xSendSensorHandle);
+    xTaskCreate(readSensor, "READ_SENSOR", 2048, NULL, tskIDLE_PRIORITY, &xReadSensorHandle);
     xReadHandle = xTimerCreate("READ", pdMS_TO_TICKS(5000), pdTRUE, NULL, &readS);
 
     if (xReadHandle != NULL){
@@ -309,7 +314,7 @@ void clear_credencial_wifi(){
 }
 
 // void registro_serial(){
-//     nvs_app_set("sn", "SW0000000001", 's');
+//     nvs_app_set("sn", "SW0000000002", 's');
 // }
 
 void app_main(void)
@@ -326,7 +331,6 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     // clear_credencial_wifi();
-    //1
     // registro_serial();
     serialNumber = (char *)calloc(13, sizeof(char));
     nvs_app_get("sn", serialNumber, 's');

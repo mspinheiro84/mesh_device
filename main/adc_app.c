@@ -58,7 +58,7 @@ void adc_config(uint8_t channel, void* _adc_handle){
     ESP_ERROR_CHECK(adc_oneshot_config_channel(adc_handle, channel, &config));
 
     //-------------ADC Calibration Init---------------//
-    do_calibration = adc_calibration_init(ADC_UNIT, ADC_ATTEN, &adc_cali_handle);
+    if (_adc_handle != NULL) do_calibration = adc_calibration_init(ADC_UNIT, ADC_ATTEN, &adc_cali_handle);
 }
 
 uint8_t adc_read(int *voltage, uint8_t channel){

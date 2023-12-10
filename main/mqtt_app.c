@@ -64,7 +64,7 @@ void mqtt_app_publish(char* topic, char *publish_string)
 {
     if (s_client) {
         int msg_id = esp_mqtt_client_publish(s_client, topic, publish_string, 0, 1, 0);
-        ESP_LOGI(TAG, "sent publish returned msg_id=%d", msg_id);
+        // ESP_LOGI(TAG, "sent publish returned msg_id=%d", msg_id);
     }
 }
 
