@@ -3,7 +3,7 @@ menu "Example Configuration"
 #  ======== Configuration Hardware Mode Sensor or Switch ======== 
     choice
         bool "Hardware Mode"
-        default HARDWARE_MODE_SENSOR
+        default HARDWARE_MODE_SWITCH
         help
             Authentication mode.
 

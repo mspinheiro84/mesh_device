@@ -42,16 +42,27 @@ static char pass[] = "MESHPASSWORD";
 static esp_ip4_addr_t s_current_ip;
 static char addrMac[6*3+1]; // MAC addr size + terminator
 static char *serialNumber;
-TaskHandle_t xReadSensorHandle, xSendSensorHandle;
 
 /*******************************************************
  *                Macros
  *******************************************************/
 
-#define BUTTON_GPIO     13
-#define LED_GPIO        2
+#if CONFIG_HARDWARE_MODE_SWITCH
+#define SWITCH_GPIO1    27
+#define SWITCH_GPIO2    26
+#define SWITCH_GPIO3    25
+#define SWITCH_GPIO4    33
+#define TAG_SWITCH      "s"
+uint8_t switchGpio[4] = {0,0,0,0};
+
+#else
 #define TAG_VOLTAGE     "v"
 #define TAG_AMPERE      "a"
+
+#endif
+
+#define BUTTON_GPIO     13
+#define LED_GPIO        2 // 32
 
 // commands for internal mesh communication:
 // <CMD> <PAYLOAD>, where CMD is one character, payload is variable dep. on command
@@ -64,6 +75,38 @@ TaskHandle_t xReadSensorHandle, xSendSensorHandle;
  *******************************************************/
 esp_err_t esp_mesh_comm_mqtt_task_start(void);
 void mesh_app_disconnected(void){}
+
+char* extractJson(char *json, char *name){
+    if ((json != NULL) && (name != NULL)){
+        int pos, tam;
+        char *aux;
+        tam = strlen(json);
+        aux = malloc(sizeof(char)*tam);
+        memcpy(aux, json, tam);
+        tam = strlen(name);
+        while (1){
+            aux = strchr(aux, '\"');
+            aux++;
+            pos = strcspn(aux+1, "\"")+1;
+            if ((pos == tam )&&(!strncmp(aux, name, tam))){
+                aux = aux+tam+3;
+                pos = strcspn(aux, "\"");
+                aux[pos] = '\0';
+                return aux;
+            }
+            if(strcspn(aux, "}") == 0){
+                ESP_LOGI(TAG, "Não encontrou");
+                return NULL;
+            }
+        }
+    }
+    ESP_LOGI(TAG, "Parametro nulo");
+    return NULL;
+}
+
+
+#if CONFIG_HARDWARE_MODE_SENSOR
+TaskHandle_t xReadSensorHandle, xSendSensorHandle;
 
 static void sendSensor(void *pvParameters){
     static time_t now;
@@ -125,7 +168,6 @@ static void sendSensor(void *pvParameters){
 
 }
 
-
 static void readSensor(void *pvParameters){
     int corrente = 0, tensao = 0;
     sensorHall50_config(6, NULL);
@@ -158,12 +200,33 @@ static void readSensor(void *pvParameters){
             // timeRTC();
         }
     }
-    
 }
+
 
 static void readS(TimerHandle_t xReadHandle){
     xTaskNotifyGive(xReadSensorHandle);
 }
+
+#else
+
+void mqtt_app_event_data(char* topic, char *publish_string){
+    char *dado = extractJson(publish_string, TAG_SWITCH);
+    if (dado != NULL) {
+        ESP_LOGW(TAG, "Retorno %s", dado);
+        // int leitura = atoi(dado);
+        // ESP_LOGW(TAG, "Switch 1:%d, Switch 2:%d, Switch 3:%d, Switch 4:%d", dado[0]&1, dado[1]&0, dado[2]&1, dado[3]&1);
+        switchGpio[0] = (uint8_t)dado[0]&1;
+        switchGpio[1] = (uint8_t)dado[1]&1;
+        switchGpio[2] = (uint8_t)dado[2]&1;
+        switchGpio[3] = (uint8_t)dado[3]&1;
+        // dado[1]&1, (uint8_t)dado[2]&1, (uint8_t)dado[3]&1};
+        gpio_set_level(SWITCH_GPIO1, switchGpio[0]);
+        gpio_set_level(SWITCH_GPIO2, switchGpio[1]);
+        gpio_set_level(SWITCH_GPIO3, switchGpio[2]);
+        gpio_set_level(SWITCH_GPIO4, switchGpio[3]);
+    }
+}
+#endif //CONFIG_HARDWARE_MODE_SENSOR
 
 void http_server_receive_post(int tam, char *data){
     int pos;
@@ -223,6 +286,11 @@ static void initialise_gpio(void)
     io_conf.mode = GPIO_MODE_OUTPUT;
     io_conf.pull_up_en = 0;
     gpio_config(&io_conf);
+
+#if CONFIG_HARDWARE_MODE_SWITCH
+    io_conf.pin_bit_mask = BIT64(SWITCH_GPIO1)|BIT64(SWITCH_GPIO2)|BIT64(SWITCH_GPIO3)|BIT64(SWITCH_GPIO4);
+    gpio_config(&io_conf);
+#endif
 }
 
 void inicialize_blink(bool root){
@@ -279,7 +347,6 @@ static void check_button(void* args)
 
 esp_err_t esp_mesh_comm_mqtt_task_start(void)
 {
-    TimerHandle_t xReadHandle;
     char *payload;
     char *topic;
     mqtt_app_start();
@@ -291,11 +358,23 @@ esp_err_t esp_mesh_comm_mqtt_task_start(void)
     asprintf(&topic, "mesh/%.*s/toCloud", 18, addrMac);
     ESP_LOGI(TAG, "Tried to publish %s", payload);
     mqtt_app_publish(topic, payload);
+
+#if CONFIG_HARDWARE_MODE_SWITCH
+    ESP_LOGI(TAG, "Mode Switch.");
+    asprintf(&topic, "mesh/%.*s/toDevice", 18, addrMac);
+    mqtt_app_subscribe(topic);
+#else
+    ESP_LOGI(TAG, "Mode Sensor.");
+#endif
+
     free(payload);
     free(topic);
     
     xTaskCreate(check_button, "check button task", 3072, NULL, 5, NULL);
-    // xTaskCreate(timeNow, "TIME_OCLOCK", 2048, NULL, 1, NULL);
+
+#if CONFIG_HARDWARE_MODE_SENSOR
+    TimerHandle_t xReadHandle;
+
     xTaskCreate(sendSensor, "SEND_SENSOR", 2048, NULL, tskIDLE_PRIORITY, &xSendSensorHandle);
     xTaskCreate(readSensor, "READ_SENSOR", 2048, NULL, tskIDLE_PRIORITY, &xReadSensorHandle);
     xReadHandle = xTimerCreate("READ", pdMS_TO_TICKS(5000), pdTRUE, NULL, &readS);
@@ -305,6 +384,8 @@ esp_err_t esp_mesh_comm_mqtt_task_start(void)
     } else {
         ESP_LOGE(TAG, "Não foi possivel criar a taskTimer");
     }
+
+#endif // CONFIG_HARDWARE_MODE_SENSOR
     return ESP_OK;
 }
 
