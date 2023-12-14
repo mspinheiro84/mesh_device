@@ -126,7 +126,6 @@ static void sendSensor(void *pvParameters){
 }
 
 
-
 static void readSensor(void *pvParameters){
     int corrente = 0, tensao = 0;
     sensorHall50_config(6, NULL);
@@ -149,11 +148,12 @@ static void readSensor(void *pvParameters){
         cont++;
         __itoa(cont, &keyVoltagem[1], 10);
         __itoa(cont, &keyAmperes[1], 10);
+        // ESP_LOGW(TAG, "Teste - %d", cont);
         nvs_app_set(keyCont, &cont, 'i');
         nvs_app_set(keyAmperes, &corrente, 'i');
         nvs_app_set(keyVoltagem, &tensao, 'i');
         
-        if (cont>14){
+        if (cont>49){
             xTaskNotifyGive(xSendSensorHandle);
             // timeRTC();
         }
@@ -319,6 +319,7 @@ void clear_credencial_wifi(){
 
 void app_main(void)
 {
+    // nvs_flash_erase();
     initialise_gpio();
     /*Conexão com WIFI*/
     esp_err_t ret = nvs_flash_init();
@@ -352,5 +353,6 @@ void app_main(void)
             }
         }
     }
+    // mesh_app(ssid, pass);    
     mesh_app(ssid, pass);    
 }

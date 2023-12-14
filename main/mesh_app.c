@@ -187,8 +187,9 @@ void mesh_scan_done_handler(int num)
         memcpy(&parent.sta.bssid, parent_record.bssid, 6);
         if (my_type == MESH_ROOT) {
             if (parent_record.authmode != WIFI_AUTH_OPEN) {
-                memcpy(&parent.sta.password, CONFIG_MESH_ROUTER_PASSWD,
-                       strlen(CONFIG_MESH_ROUTER_PASSWD));
+                // parent.sta.threshold.authmode = parent_record.authmode;
+                // parent.sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
+                memcpy(&parent.sta.password, pass_mesh, strlen(pass_mesh));
             }
             ESP_LOGW(TAG, "<PARENT>%s, "MACSTR", channel:%u, rssi:%d",
                      parent_record.ssid, MAC2STR(parent_record.bssid),
@@ -249,7 +250,7 @@ void mesh_event_handler(void *arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "<MESH_EVENT_CHILD_CONNECTED>aid:%d, "MACSTR"",
                  child_connected->aid,
                  MAC2STR(child_connected->mac));
-                 mesh_send_app(-1, NULL, 0);
+        mesh_send_app(-1, NULL, 0);
     }
     break;
     case MESH_EVENT_CHILD_DISCONNECTED: {
@@ -264,7 +265,7 @@ void mesh_event_handler(void *arg, esp_event_base_t event_base,
         ESP_LOGW(TAG, "<MESH_EVENT_ROUTING_TABLE_ADD>add %d, new:%d",
                  routing_table->rt_size_change,
                  routing_table->rt_size_new);
-                 mesh_send_app(-1, NULL, 0);
+        mesh_send_app(-1, NULL, 0);
     }
     break;
     case MESH_EVENT_ROUTING_TABLE_REMOVE: {

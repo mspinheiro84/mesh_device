@@ -1,5 +1,18 @@
 menu "Example Configuration"
 
+#  ======== Configuration Hardware Mode Sensor or Switch ======== 
+    choice
+        bool "Hardware Mode"
+        default HARDWARE_MODE_SENSOR
+        help
+            Authentication mode.
+
+        config HARDWARE_MODE_SENSOR
+            bool "HARDWARE_MODE_SENSOR"
+        config HARDWARE_MODE_SWITCH
+            bool "HARDWARE_MODE_SWITCH"
+    endchoice    
+
 #  ======== Configuration Wifi AP ======== 
     config ESP_WIFI_AP_SSID
         string "WiFi SSID"
@@ -26,24 +39,18 @@ menu "Example Configuration"
             Max number of the STA connects to AP.
 
 #  ======== Configuration Rede mesh ======== 
-    config MESH_CHANNEL
-        int "channel"
-        range 0 14
-        default 0
-        help
-            mesh network channel.
 
-    config MESH_ROUTER_SSID
-        string "Router SSID"
-        default "ROUTER_SSID"
-        help
-            Router SSID.
+    # config MESH_ROUTER_SSID
+    #     string "Router SSID"
+    #     default "ROUTER_SSID"
+    #     help
+    #         Router SSID.
 
-    config MESH_ROUTER_PASSWD
-        string "Router password"
-        default "ROUTER_PASSWD"
-        help
-            Router password.
+    # config MESH_ROUTER_PASSWD
+    #     string "Router password"
+    #     default "ROUTER_PASSWD"
+    #     help
+    #         Router password.
 
     choice
         bool "Mesh AP Authentication Mode"
@@ -70,9 +77,16 @@ menu "Example Configuration"
         help
             Mesh AP authentication mode.
 
+    config MESH_CHANNEL
+        int "channel"
+        range 0 14
+        default 0
+        help
+            mesh network channel.
+
     config MESH_AP_PASSWD
         string "Mesh AP Password"
-        default "MAP_PASSWD"
+        default "MeshPass"
         help
             Mesh AP password.
 
