@@ -18,6 +18,8 @@
 static const char *TAG = "MQTT_APP LIBRARY";
 static esp_mqtt_client_handle_t s_client = NULL;
 
+// void mqtt_app_event_data(char* topic, char *publish_string);
+
 /*================== Definições ==================*/
 static esp_err_t mqtt_event_handler_cb(esp_mqtt_event_handle_t event)
 {
@@ -97,4 +99,4 @@ void mqtt_app_start(void)
 
 void mqtt_app_event_connected(void){} 
 void mqtt_app_event_disconnected(void){} 
-// void mqtt_app_event_data(char* topic, char *publish_string){}
+void mqtt_app_event_data(char* topic, char *publish_string){}

@@ -58,6 +58,8 @@ static uint8_t switchGpio[4] = {0,0,0,0};
 static uint32_t timerSendSwitch = 10; //tempo em segundos
 
 #else
+#define SENSOR_GPIO1    6 // PIN34
+#define SENSOR_GPIO2    7 // PIN35
 #define TAG_VOLTAGE     "v"
 #define TAG_AMPERE      "a"
 
@@ -174,11 +176,11 @@ static void sendSensor(void *pvParameters)
 static void readSensor(void *pvParameters)
 {
     int corrente = 0, tensao = 0;
-    sensorHall50_config(6, NULL);
-    sensorZmpt101b_config(7, sensorHall50_check());
+    sensorHall50_config(SENSOR_GPIO1, NULL);
+    sensorZmpt101b_config(SENSOR_GPIO2, sensorHall50_check());
     int cont = 0;
     char keyCont[5] = "cont";
-    char keyVoltagem[5] = TAG_VOLTAGE;
+char keyVoltagem[5] = TAG_VOLTAGE;
     char keyAmperes[5] = TAG_AMPERE;
 
     while (1)
@@ -214,30 +216,39 @@ static void readS(TimerHandle_t xReadHandle)
 
 #else
 
+void setSwitch(char *dado){
+    switchGpio[0] = dado[0]=='-' ? switchGpio[0] : (uint8_t)dado[0]&1;
+    switchGpio[1] = dado[1]=='-' ? switchGpio[1] : (uint8_t)dado[1]&1;
+    switchGpio[2] = dado[2]=='-' ? switchGpio[2] : (uint8_t)dado[2]&1;
+    switchGpio[3] = dado[3]=='-' ? switchGpio[3] : (uint8_t)dado[3]&1;
+
+    gpio_set_level(SWITCH_GPIO1, switchGpio[0]);
+    gpio_set_level(SWITCH_GPIO2, switchGpio[1]);
+    gpio_set_level(SWITCH_GPIO3, switchGpio[2]);
+    gpio_set_level(SWITCH_GPIO4, switchGpio[3]);
+    nvs_app_set(TAG_SWITCH, dado, 's');
+}
+
 static void sendSwitch(TimerHandle_t xSendHandle)
 {
     char topic[33];
     char payload[54];
+    char *dado;
+    dado = (char *)calloc(4, sizeof(char));
+    nvs_app_get(TAG_SWITCH, dado, 's');
+    ESP_LOGW(TAG, "dado %s", dado);
+    setSwitch(dado);
     sprintf(topic, "mesh/%.*s/toDevice", 18, addrMac);
     sprintf(payload, "{\"sn\":\"%s\",\"%s\":\"%d%d%d%d\"}", serialNumber ,TAG_SWITCH, switchGpio[0], switchGpio[1], switchGpio[2], switchGpio[3]);
     mqtt_app_publish(topic, payload);
 }
-
 
 void mqtt_app_event_data(char* topic, char *publish_string)
 {
     char *dado = extractJson(publish_string, TAG_SWITCH);
     if (dado != NULL) {
         // ESP_LOGW(TAG, "Retorno %s", dado);
-        switchGpio[0] = dado[0]=='-' ? switchGpio[0] : (uint8_t)dado[0]&1;
-        switchGpio[1] = dado[1]=='-' ? switchGpio[1] : (uint8_t)dado[1]&1;
-        switchGpio[2] = dado[2]=='-' ? switchGpio[2] : (uint8_t)dado[2]&1;
-        switchGpio[3] = dado[3]=='-' ? switchGpio[3] : (uint8_t)dado[3]&1;
-        
-        gpio_set_level(SWITCH_GPIO1, switchGpio[0]);
-        gpio_set_level(SWITCH_GPIO2, switchGpio[1]);
-        gpio_set_level(SWITCH_GPIO3, switchGpio[2]);
-        gpio_set_level(SWITCH_GPIO4, switchGpio[3]);
+        setSwitch(dado);
     }
 }
 #endif //CONFIG_HARDWARE_MODE_SENSOR
@@ -380,6 +391,10 @@ esp_err_t esp_mesh_comm_mqtt_task_start(void)
 
 #if CONFIG_HARDWARE_MODE_SWITCH
     ESP_LOGI(TAG, "Mode Switch.");
+    char *dado;
+    dado = (char *)calloc(4, sizeof(char));
+    nvs_app_get(TAG_SWITCH, dado, 's');
+    setSwitch(dado);
     asprintf(&topic, "mesh/%.*s/toDevice", 18, addrMac);
     mqtt_app_subscribe(topic);
 
