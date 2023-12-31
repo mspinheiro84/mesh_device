@@ -439,9 +439,7 @@ static void check_button(void* args)
             /*mensage via mqtt*/
             // ESP_LOGI(TAG, "Tried to publish in %s", topic);
             // mqtt_app_publish(topic, payload);
-
-            ESP_LOGW(TAG, "%s", payload);
-            ESP_LOGW(TAG, "Tamanho:%d", strlen(payload));
+            // ESP_LOGW(TAG, "%s", payload);
             mesh_send_app(1, &payload, strlen(payload));
             /*mensage via mesh*/
             mesh_send_app(-1, data_to_send, 7);

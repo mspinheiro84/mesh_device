@@ -105,7 +105,7 @@ void static recv_cb(mesh_addr_t *from, mesh_data_t *data) //=======MESH_APP
 * se flagTo 2 root encaminhando instrução da internet para node
 */
 void mesh_send_app(int flagTo, uint8_t *data_to_send, uint16_t size){
-    uint8_t *my_mac = (esp_mesh_is_root()) ? mesh_netif_get_ap_mac() : mesh_netif_get_station_mac();
+    uint8_t *my_mac;
     esp_err_t err;
     mesh_data_t data;
     data.proto = MESH_PROTO_BIN;
@@ -156,7 +156,7 @@ void mesh_send_app(int flagTo, uint8_t *data_to_send, uint16_t size){
             data.size = size;
             data.data = data_to_send;
         }
-    
+        my_mac = (esp_mesh_is_root()) ? mesh_netif_get_ap_mac() : mesh_netif_get_station_mac();
         xSemaphoreTake(s_route_table_lock, portMAX_DELAY);
         for (int i = 0; i < s_route_table_size; i++) {
             if (MAC_ADDR_EQUAL(s_route_table[i].addr, my_mac)) {
