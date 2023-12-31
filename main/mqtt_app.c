@@ -43,9 +43,9 @@ static esp_err_t mqtt_event_handler_cb(esp_mqtt_event_handle_t event)
             break;
         case MQTT_EVENT_DATA:
             ESP_LOGI(TAG, "MQTT_EVENT_DATA");
-            ESP_LOGI(TAG, "TOPIC=%.*s", event->topic_len, event->topic);
-            ESP_LOGI(TAG, "DATA=%.*s", event->data_len, event->data);
-            mqtt_app_event_data(event->topic, event->data);
+            // ESP_LOGI(TAG, "TOPIC=%.*s", event->topic_len, event->topic);
+            // ESP_LOGI(TAG, "DATA=%.*s", event->data_len, event->data);
+            mqtt_app_event_data(event->data, event->data_len);
             break;
         case MQTT_EVENT_ERROR:
             ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
@@ -97,6 +97,6 @@ void mqtt_app_start(void)
     esp_mqtt_client_start(s_client);
 }
 
-void mqtt_app_event_connected(void){} 
+// void mqtt_app_event_connected(void){} 
 void mqtt_app_event_disconnected(void){} 
-void mqtt_app_event_data(char* topic, char *publish_string){}
+// void mqtt_app_event_data(char* topic, char *publish_string){}

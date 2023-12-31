@@ -45,20 +45,29 @@ static int s_route_table_size = 0;
 static SemaphoreHandle_t s_route_table_lock = NULL;
 static uint8_t s_mesh_tx_payload[CONFIG_MESH_ROUTE_TABLE_SIZE*6+1];
 static char ssid_mesh[20], pass_mesh[20];
+static mesh_addr_t mesh_root_addr;
 
 static bool root = false;
 // static esp_netif_t *netif_sta = NULL;
 
 esp_err_t mesh_check_cmd_app(uint8_t cmd, uint8_t *data);
-void mesh_app_got_ip(void);
+void mesh_app_got_ip(bool root);
 void mesh_app_disconnected(void);
+void mesh_send_root(char *data_to_send);
+void mesh_recv_app(char *data, uint16_t data_size);
 
 void mesh_app_type_root(bool isRoot){
     root = isRoot;
+    if (root) esp_mesh_set_type(MESH_ROOT);
+    esp_mesh_fix_root(true);
 }
 
 esp_ip4_addr_t mesh_app_get_ip(void){
     return s_current_ip;
+}
+
+bool mesh_app_is_root(void){
+    return root;
 }
 
 
@@ -78,7 +87,13 @@ void static recv_cb(mesh_addr_t *from, mesh_data_t *data) //=======MESH_APP
         if (mesh_check_cmd_app(data->data[0], data->data+1)){
             ESP_LOGE(TAG, "Error in receiving raw mesh data: Unknown command");
         }
-    } else {
+    } else if (data->size > 12){
+        // if (root){
+            mesh_recv_app((char*) data->data, data->size);
+        // } else {
+
+        // }
+    }else {
         ESP_LOGE(TAG, "Error in receiving raw mesh data: Unexpected size");
     }
 }
@@ -86,35 +101,79 @@ void static recv_cb(mesh_addr_t *from, mesh_data_t *data) //=======MESH_APP
 
 /*se flagTo -1 envia para todos device
 * se size for 0 envia tabela de roteamento para todos
+* se flagTo 1 device enviando instrução para internet
+* se flagTo 2 root encaminhando instrução da internet para node
 */
 void mesh_send_app(int flagTo, uint8_t *data_to_send, uint16_t size){
-    uint8_t *my_mac = mesh_netif_get_station_mac();
+    uint8_t *my_mac = (esp_mesh_is_root()) ? mesh_netif_get_ap_mac() : mesh_netif_get_station_mac();
     esp_err_t err;
     mesh_data_t data;
     data.proto = MESH_PROTO_BIN;
     data.tos = MESH_TOS_P2P;
-    if(size == 0){
-        esp_mesh_get_routing_table((mesh_addr_t *) &s_route_table,
-            CONFIG_MESH_ROUTE_TABLE_SIZE * 6, &s_route_table_size);
-        data.size = s_route_table_size * 6 + 1;
-        s_mesh_tx_payload[0] = CMD_ROUTE_TABLE;
-        memcpy(s_mesh_tx_payload + 1, s_route_table, s_route_table_size*6);
-        data.data = s_mesh_tx_payload;
-    } else if(s_route_table_size){
-        if(flagTo == -1){
+    mesh_addr_t mesh_addr_dest;
+
+    switch (flagTo){
+    case 1:
+        if (root){
+            mesh_send_root((char*) data_to_send);
+            return;
+        }else {
+            while(1){
+                if(s_route_table_size){
+                    data.size = size;
+                    data.data = data_to_send;
+                    mesh_addr_dest = mesh_root_addr;
+                    break;
+                }
+                vTaskDelay(pdMS_TO_TICKS(100));
+            }
+        }
+        break;
+        
+    // case (2):
+    //     while(1){
+    //         if(s_route_table_size){
+    //             ESP_LOGW(TAG, "Entrou no s_route_table_size com:%s", (char*) data_to_send);
+    //             ESP_LOGW(TAG, "E com s_route_table_size de:%d", s_route_table_size);
+    //             data.size = size;
+    //             data.data = data_to_send;
+    //             mesh_addr_dest = mesh_root_addr;
+    //             break;
+    //         }
+    //         vTaskDelay(pdMS_TO_TICKS(100));
+    //     }
+    //     break;
+    
+    case (-1):
+        if(size == 0){
+            esp_mesh_get_routing_table((mesh_addr_t *) &s_route_table,
+                CONFIG_MESH_ROUTE_TABLE_SIZE * 6, &s_route_table_size);
+            data.size = s_route_table_size * 6 + 1;
+            s_mesh_tx_payload[0] = CMD_ROUTE_TABLE;
+            memcpy(s_mesh_tx_payload + 1, s_route_table, s_route_table_size*6);
+            data.data = s_mesh_tx_payload;
+        } else if(s_route_table_size){
             data.size = size;
             data.data = data_to_send;
-        }        
-    }
-    xSemaphoreTake(s_route_table_lock, portMAX_DELAY);
-    for (int i = 0; i < s_route_table_size; i++) {
-        if (MAC_ADDR_EQUAL(s_route_table[i].addr, my_mac)) {
-            continue;
         }
-        err = esp_mesh_send(&s_route_table[i], &data, MESH_DATA_P2P, NULL, 0);
-        ESP_LOGI(TAG, "Sending to [%d] "
-                MACSTR ": sent with err code: %d", i, MAC2STR(s_route_table[i].addr), err);
+    
+        xSemaphoreTake(s_route_table_lock, portMAX_DELAY);
+        for (int i = 0; i < s_route_table_size; i++) {
+            if (MAC_ADDR_EQUAL(s_route_table[i].addr, my_mac)) {
+                continue;
+            }
+            err = esp_mesh_send(&s_route_table[i], &data, MESH_DATA_P2P, NULL, 0);
+            ESP_LOGI(TAG, "Sending to [%d] "
+                    MACSTR ": sent with err code: %d", i, MAC2STR(s_route_table[i].addr), err);
+        }
+        xSemaphoreGive(s_route_table_lock);
+        return;
     }
+    
+    xSemaphoreTake(s_route_table_lock, portMAX_DELAY);
+    err = esp_mesh_send(&mesh_addr_dest, &data, MESH_DATA_P2P, NULL, 0);
+    ESP_LOGI(TAG, "Sending to root "
+            MACSTR ": sent with err code: %d", MAC2STR(mesh_addr_dest.addr), err);
     xSemaphoreGive(s_route_table_lock);
 }
 
@@ -164,13 +223,14 @@ void mesh_scan_done_handler(int num)
                      record.ssid, MAC2STR(record.bssid), record.primary,
                      record.rssi);
             if(root){
+                if (record.primary != 8){
                 if (!strcmp(ssid_mesh, (char *) record.ssid)) {
                     parent_found = true;
                     memcpy(&parent_record, &record, sizeof(record));
                     my_type = MESH_ROOT;
                     my_layer = MESH_ROOT_LAYER;
                     vTaskDelay(pdMS_TO_TICKS(2000));
-                }
+                }}
             }
         }
     }
@@ -265,7 +325,7 @@ void mesh_event_handler(void *arg, esp_event_base_t event_base,
         ESP_LOGW(TAG, "<MESH_EVENT_ROUTING_TABLE_ADD>add %d, new:%d",
                  routing_table->rt_size_change,
                  routing_table->rt_size_new);
-        mesh_send_app(-1, NULL, 0);
+        // mesh_send_app(-1, NULL, 0);
     }
     break;
     case MESH_EVENT_ROUTING_TABLE_REMOVE: {
@@ -327,6 +387,7 @@ void mesh_event_handler(void *arg, esp_event_base_t event_base,
         mesh_event_root_address_t *root_addr = (mesh_event_root_address_t *)event_data;
         ESP_LOGI(TAG, "<MESH_EVENT_ROOT_ADDRESS>root address:"MACSTR"",
                  MAC2STR(root_addr->addr));
+        mesh_root_addr = *root_addr;
     }
     break;
     case MESH_EVENT_VOTE_STARTED: {
@@ -429,7 +490,7 @@ void ip_event_handler(void *arg, esp_event_base_t event_base,
     ESP_ERROR_CHECK(esp_netif_get_dns_info(netif, ESP_NETIF_DNS_MAIN, &dns));
     mesh_netif_start_root_ap(esp_mesh_is_root(), dns.ip.u_addr.ip4.addr);
 #endif
-    mesh_app_got_ip();
+    mesh_app_got_ip(root);
 }
 
 void mesh_app(char ssid[], char pass[]){

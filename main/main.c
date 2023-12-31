@@ -65,6 +65,7 @@ static uint32_t timerSendSwitch = 10; //tempo em segundos
 
 #endif
 
+#define TAG_NEWDEVICE   "nd"
 #define BUTTON_GPIO     13
 #define LED_GPIO        2 // 32
 
@@ -72,6 +73,8 @@ static uint32_t timerSendSwitch = 10; //tempo em segundos
 // <CMD> <PAYLOAD>, where CMD is one character, payload is variable dep. on command
 #define CMD_KEYPRESSED 0x55
 // CMD_KEYPRESSED: payload is always 6 bytes identifying address of node sending keypress event
+// #define CMD_KEYPRESSED 0x55
+// // CMD_KEYPRESSED: payload is always 6 bytes identifying address of node sending keypress event
 
 
 /*******************************************************
@@ -82,7 +85,7 @@ void mesh_app_disconnected(void){}
 
 char* extractJson(char *json, char *name)
 {
-    if ((json != NULL) && (name != NULL)){
+    if ((json != NULL) && (name != NULL) && (json[0] == '{')){
         int pos, tam;
         char *aux;
         tam = strlen(json);
@@ -107,6 +110,13 @@ char* extractJson(char *json, char *name)
     }
     ESP_LOGI(TAG, "Parametro nulo");
     return NULL;
+}
+
+
+void mesh_send_root(char *data_to_send){
+    char topic[33];
+    sprintf(topic, "mesh/%.*s/toDevice", 18, addrMac);
+    mqtt_app_publish(topic, (char*) data_to_send);
 }
 
 
@@ -145,9 +155,9 @@ static void sendSensor(void *pvParameters)
         printf("Count: UsedEntries = (%d), FreeEntries = (%d), AllEntries = (%d)\n",
                 nvs_stats.used_entries, nvs_stats.free_entries, nvs_stats.total_entries);            
 
-        char topic[33];
         char payload[54];
-        sprintf(topic, "mesh/%.*s/toDevice", 18, addrMac);
+        // char topic[33];
+        // sprintf(topic, "mesh/%.*s/toDevice", 18, addrMac);
         char keyVoltagem[5] = TAG_VOLTAGE;
         char keyAmperes[5] = TAG_AMPERE;
         char keyCont[5] = "cont";
@@ -167,7 +177,8 @@ static void sendSensor(void *pvParameters)
             nvs_app_get(keyAmperes, &corrente, 'i');
             nvs_app_get(keyVoltagem, &tensao, 'i');
             sprintf(payload, "{\"sn\":\"%s\",\"s\":{\"%s\":%d,\"%s\":%d}}", serialNumber ,TAG_VOLTAGE, tensao, TAG_AMPERE, corrente);
-            mqtt_app_publish(topic, payload);
+            // mqtt_app_publish(topic, payload);
+            mesh_send_app(1, &payload, strlen(payload));
             vTaskDelay(pdMS_TO_TICKS(500));
         }
     }
@@ -236,22 +247,79 @@ static void sendSwitch(TimerHandle_t xSendHandle)
     char *dado;
     dado = (char *)calloc(4, sizeof(char));
     nvs_app_get(TAG_SWITCH, dado, 's');
-    ESP_LOGW(TAG, "dado %s", dado);
+    // ESP_LOGW(TAG, "dado salvo %s", dado);
     setSwitch(dado);
-    sprintf(topic, "mesh/%.*s/toDevice", 18, addrMac);
+    // sprintf(topic, "mesh/%.*s/toDevice", 18, addrMac);
     sprintf(payload, "{\"sn\":\"%s\",\"%s\":\"%d%d%d%d\"}", serialNumber ,TAG_SWITCH, switchGpio[0], switchGpio[1], switchGpio[2], switchGpio[3]);
-    mqtt_app_publish(topic, payload);
-}
-
-void mqtt_app_event_data(char* topic, char *publish_string)
-{
-    char *dado = extractJson(publish_string, TAG_SWITCH);
-    if (dado != NULL) {
-        // ESP_LOGW(TAG, "Retorno %s", dado);
-        setSwitch(dado);
-    }
+    // mqtt_app_publish(topic, payload);
+    mesh_send_app(1, &payload, strlen(payload));
 }
 #endif //CONFIG_HARDWARE_MODE_SENSOR
+
+void mesh_recv_app(char *data, uint16_t data_size){
+    data[data_size] = '\0';
+    // ESP_LOGW(TAG, "Tamanho da string:%d", data_size);
+    // ESP_LOGW(TAG, "Chegou para extrair:%s", data);
+    char* dest = extractJson(data, "sn");
+    if (dest == NULL) return;
+    if (!strcmp(dest, serialNumber)){
+        // ESP_LOGW(TAG, "Chegou mesh: É para mim ;)");
+        // ESP_LOGW(TAG, "%s", data);
+        data[data_size] = '\0';
+        char aux[data_size+1];
+        strcpy(aux, data);
+        char *dado;
+#if CONFIG_HARDWARE_MODE_SWITCH
+        dado = extractJson(aux, TAG_SWITCH);
+        if (dado != NULL) {
+            // ESP_LOGW(TAG, "Retorno %s", dado);
+            setSwitch(dado);
+            return;
+        }
+#endif
+    } else {
+        // ESP_LOGW(TAG, "Chegou mesh: É para outro ;)");
+        if (mesh_app_is_root())
+            mesh_send_root(data);
+    }
+}
+
+void mqtt_app_event_data(char *publish_string, int tam)
+{
+    // ESP_LOGD(TAG, "%.*s", tam, publish_string);
+    publish_string[tam] = '\0';
+    char aux[tam+1];
+    strcpy(aux, publish_string);
+    // char *aux = malloc(sizeof(char)*tam);
+    // memcpy(aux, publish_string, tam);
+    // aux[tam] = '\0';
+    char *dado;
+    // ESP_LOGW(TAG, "Chegou mqtt - Mensagem:%s", aux);
+    dado = extractJson(aux, "sn");
+    if (dado != NULL){
+        if (!strcmp(dado, serialNumber)){
+            // ESP_LOGW(TAG, "Mensagem para mim :D");
+#if CONFIG_HARDWARE_MODE_SWITCH
+            dado = extractJson(aux, TAG_SWITCH);
+            if (dado != NULL) {
+                // ESP_LOGW(TAG, "Retorno %s", dado);
+                setSwitch(dado);
+                return;
+            }
+#endif
+        } else {
+            // ESP_LOGW(TAG, "Mensagem para outro :p");
+            dado = extractJson(aux, TAG_NEWDEVICE);
+            if (dado != NULL){
+                ESP_LOGW(TAG, "Novo device à ser conectado, %s", dado);
+                return;
+            }
+            mesh_send_app(-1, &aux, tam);
+        }
+    }
+
+
+}
 
 void http_server_receive_post(int tam, char *data)
 {
@@ -295,9 +363,18 @@ esp_err_t mesh_check_cmd_app(uint8_t cmd, uint8_t *data)
     }
 }
 
-void mesh_app_got_ip(void)
+void mesh_app_got_ip(bool root)
 {
+    if (root) mqtt_app_start();
     esp_mesh_comm_mqtt_task_start();
+}
+
+void mqtt_app_event_connected(void){
+    char topic[33];
+    uint8_t *my_mac = (esp_mesh_is_root()) ? mesh_netif_get_ap_mac() : mesh_netif_get_station_mac();
+    snprintf(addrMac, sizeof(addrMac),MACSTR, MAC2STR(my_mac));
+    sprintf(topic, "mesh/%.*s/toDevice", 18, addrMac);
+    mqtt_app_subscribe(topic);
 }
 
 static void initialise_gpio(void)
@@ -344,14 +421,14 @@ bool check_button_root(void)
 
 static void check_button(void* args)
 {
-    char topic[33];
-    char payload[44];
+    // char topic[33];
+    static char payload[54];
     static bool old_level = true;
     bool new_level;
     uint8_t *my_mac = (esp_mesh_is_root()) ? mesh_netif_get_ap_mac() : mesh_netif_get_station_mac();
     // snprintf(addrMac, sizeof(addrMac),MACSTR, MAC2STR(my_mac));
-    sprintf(payload, "layer:%d IP:" IPSTR, esp_mesh_get_layer(), IP2STR(&s_current_ip));
-    sprintf(topic, "mesh/%.*s/toDevice", 18, addrMac);
+    sprintf(payload, "{\"sn\":\"%s\",\"layer\":\"%d\", \"IP\":\"" IPSTR "\"}", serialNumber, esp_mesh_get_layer(), IP2STR(&s_current_ip));
+    // sprintf(topic, "mesh/%.*s/toDevice", 18, addrMac);
 
     uint8_t data_to_send[6+1] = { CMD_KEYPRESSED, };
     memcpy(data_to_send + 1, my_mac, 6);
@@ -360,9 +437,12 @@ static void check_button(void* args)
         if (!new_level && old_level) {
             ESP_LOGW(TAG, "Key pressed!");
             /*mensage via mqtt*/
-            ESP_LOGI(TAG, "Tried to publish in %s", topic);
-            mqtt_app_publish(topic, payload);
+            // ESP_LOGI(TAG, "Tried to publish in %s", topic);
+            // mqtt_app_publish(topic, payload);
 
+            ESP_LOGW(TAG, "%s", payload);
+            ESP_LOGW(TAG, "Tamanho:%d", strlen(payload));
+            mesh_send_app(1, &payload, strlen(payload));
             /*mensage via mesh*/
             mesh_send_app(-1, data_to_send, 7);
             
@@ -376,18 +456,19 @@ static void check_button(void* args)
 }
 
 esp_err_t esp_mesh_comm_mqtt_task_start(void)
-{
-    char *payload;
-    char *topic;
-    mqtt_app_start();
-    s_current_ip = mesh_app_get_ip();    
+{    
+    char payload[54];
+    // char *topic;
+    s_current_ip = mesh_app_get_ip();
     uint8_t *my_mac = (esp_mesh_is_root()) ? mesh_netif_get_ap_mac() : mesh_netif_get_station_mac();
     snprintf(addrMac, sizeof(addrMac),MACSTR, MAC2STR(my_mac));
     // asprintf(&payload, "layer:%d IP:" IPSTR, esp_mesh_get_layer(), IP2STR(&s_current_ip));
-    asprintf(&payload, "{\"t\":\"%.*s\",\"sn\":\"%s\"}", 18, addrMac, serialNumber);
-    asprintf(&topic, "mesh/%.*s/toCloud", 18, addrMac);
+    sprintf(&payload, "{\"m\":\"%.*s\",\"sn\":\"%s\"}", 18, addrMac, serialNumber);
+    // asprintf(&topic, "mesh/%.*s/toCloud", 18, addrMac);
     ESP_LOGI(TAG, "Tried to publish %s", payload);
-    mqtt_app_publish(topic, payload);
+    mesh_send_app(1, &payload, strlen(payload));
+    // mqtt_app_publish(topic, payload);
+    // mqtt_app_subscribe(topic);
 
 #if CONFIG_HARDWARE_MODE_SWITCH
     ESP_LOGI(TAG, "Mode Switch.");
@@ -395,8 +476,8 @@ esp_err_t esp_mesh_comm_mqtt_task_start(void)
     dado = (char *)calloc(4, sizeof(char));
     nvs_app_get(TAG_SWITCH, dado, 's');
     setSwitch(dado);
-    asprintf(&topic, "mesh/%.*s/toDevice", 18, addrMac);
-    mqtt_app_subscribe(topic);
+    // asprintf(&topic, "mesh/%.*s/toDevice", 18, addrMac);
+    // mqtt_app_subscribe(topic);
 
     TimerHandle_t xSendHandle;
     xSendHandle = xTimerCreate("SEND", pdMS_TO_TICKS(1000*timerSendSwitch), pdTRUE, NULL, &sendSwitch);
@@ -410,8 +491,7 @@ esp_err_t esp_mesh_comm_mqtt_task_start(void)
     ESP_LOGI(TAG, "Mode Sensor.");
 #endif
 
-    free(payload);
-    free(topic);
+    // free(topic);
     
     xTaskCreate(check_button, "check button task", 3072, NULL, 5, NULL);
 
@@ -478,6 +558,5 @@ void app_main(void)
             }
         }
     }
-    // mesh_app(ssid, pass);    
     mesh_app(ssid, pass);    
 }
