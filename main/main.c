@@ -42,6 +42,7 @@ static char pass[] = "MESHPASSWORD";
 static esp_ip4_addr_t s_current_ip;
 static char addrMac[6*3+1]; // MAC addr size + terminator
 static char *serialNumber;
+static bool ativo = false;
 
 /*******************************************************
  *                Macros
@@ -80,8 +81,10 @@ static uint32_t timerSendSwitch = 10; //tempo em segundos
 /*******************************************************
  *                Declarações
  *******************************************************/
-esp_err_t esp_mesh_comm_mqtt_task_start(void);
+void esp_mesh_comm_mqtt_task_start(void);
+esp_err_t connected_mesh(void);
 void mesh_app_disconnected(void){}
+
 
 char* extractJson(char *json, char *name)
 {
@@ -176,7 +179,7 @@ static void sendSensor(void *pvParameters)
             corrente = 0;
             nvs_app_get(keyAmperes, &corrente, 'i');
             nvs_app_get(keyVoltagem, &tensao, 'i');
-            sprintf(payload, "{\"sn\":\"%s\",\"s\":{\"%s\":%d,\"%s\":%d}}", serialNumber ,TAG_VOLTAGE, tensao, TAG_AMPERE, corrente);
+            sprintf(payload, "{\"sn\":\"%s\",\"%s\":%d,\"%s\":%d}", serialNumber ,TAG_VOLTAGE, tensao, TAG_AMPERE, corrente);
             // mqtt_app_publish(topic, payload);
             mesh_send_app(1, &payload, strlen(payload));
             vTaskDelay(pdMS_TO_TICKS(500));
@@ -264,23 +267,39 @@ void mesh_recv_app(char *data, uint16_t data_size){
     if (dest == NULL) return;
     if (!strcmp(dest, serialNumber)){
         // ESP_LOGW(TAG, "Chegou mesh: É para mim ;)");
-        // ESP_LOGW(TAG, "%s", data);
+        // ESP_LOGW(TAG, "%s", data);        
         data[data_size] = '\0';
         char aux[data_size+1];
         strcpy(aux, data);
         char *dado;
+        dado = extractJson(aux, "m");
+        if ((!ativo) && (dado != NULL)) {
+            ativo = true;
+            connected_mesh();
+        }
+        if (!ativo) return;
 #if CONFIG_HARDWARE_MODE_SWITCH
         dado = extractJson(aux, TAG_SWITCH);
         if (dado != NULL) {
-            // ESP_LOGW(TAG, "Retorno %s", dado);
+            // ESP_LOGW(TAG, "Variavel dado:%s", dado);
             setSwitch(dado);
             return;
         }
 #endif
     } else {
         // ESP_LOGW(TAG, "Chegou mesh: É para outro ;)");
-        if (mesh_app_is_root())
+        if (mesh_app_is_root()){
+            int membro;
+            // ESP_LOGW(TAG, "Destino %s", dest);
+            if(!nvs_app_get(dest, &membro, 'i')){
+                data[2] = 'n';
+                data[3] = 'd';
+                data[data_size-1] = '\0';
+                asprintf(&data, "%s,\"sn\":\"%s\"}", data, serialNumber);
+                // ESP_LOGW(TAG, "Como ficou %s", data);
+            }
             mesh_send_root(data);
+        }
     }
 }
 
@@ -299,6 +318,11 @@ void mqtt_app_event_data(char *publish_string, int tam)
     if (dado != NULL){
         if (!strcmp(dado, serialNumber)){
             // ESP_LOGW(TAG, "Mensagem para mim :D");
+            dado = extractJson(aux, "m");
+            if ((!ativo) && (dado != NULL)) {
+                ativo = true;
+                connected_mesh();
+            }
 #if CONFIG_HARDWARE_MODE_SWITCH
             dado = extractJson(aux, TAG_SWITCH);
             if (dado != NULL) {
@@ -309,12 +333,20 @@ void mqtt_app_event_data(char *publish_string, int tam)
 #endif
         } else {
             // ESP_LOGW(TAG, "Mensagem para outro :p");
-            dado = extractJson(aux, TAG_NEWDEVICE);
-            if (dado != NULL){
-                ESP_LOGW(TAG, "Novo device à ser conectado, %s", dado);
-                return;
+            int membro;
+            if(!nvs_app_get(dado, &membro, 'i')){
+                char *mac;
+                mac = extractJson(aux, "m");
+                if (mac != NULL){
+                    ESP_LOGW(TAG, "Liberado, sn:%s", dado);
+                    membro = 1;
+                    nvs_app_set(dado, &membro, 'i');
+                } else {
+                    return;
+                }
             }
             mesh_send_app(-1, &aux, tam);
+
         }
     }
 
@@ -453,7 +485,7 @@ static void check_button(void* args)
     vTaskDelete(NULL);
 }
 
-esp_err_t esp_mesh_comm_mqtt_task_start(void)
+ void esp_mesh_comm_mqtt_task_start(void)
 {    
     char payload[54];
     // char *topic;
@@ -461,13 +493,15 @@ esp_err_t esp_mesh_comm_mqtt_task_start(void)
     uint8_t *my_mac = (esp_mesh_is_root()) ? mesh_netif_get_ap_mac() : mesh_netif_get_station_mac();
     snprintf(addrMac, sizeof(addrMac),MACSTR, MAC2STR(my_mac));
     // asprintf(&payload, "layer:%d IP:" IPSTR, esp_mesh_get_layer(), IP2STR(&s_current_ip));
-    sprintf(&payload, "{\"m\":\"%.*s\",\"sn\":\"%s\"}", 18, addrMac, serialNumber);
+    sprintf(&payload, "{\"sn\":\"%s\",\"m\":\"%.*s\"}", serialNumber, 18, addrMac);
     // asprintf(&topic, "mesh/%.*s/toCloud", 18, addrMac);
     ESP_LOGI(TAG, "Tried to publish %s", payload);
     mesh_send_app(1, &payload, strlen(payload));
-    // mqtt_app_publish(topic, payload);
-    // mqtt_app_subscribe(topic);
+}
 
+
+esp_err_t connected_mesh(void){
+    ESP_LOGW(TAG, "ATIVO.");
 #if CONFIG_HARDWARE_MODE_SWITCH
     ESP_LOGI(TAG, "Mode Switch.");
     char *dado;
@@ -487,13 +521,7 @@ esp_err_t esp_mesh_comm_mqtt_task_start(void)
     }
 #else
     ESP_LOGI(TAG, "Mode Sensor.");
-#endif
 
-    // free(topic);
-    
-    xTaskCreate(check_button, "check button task", 3072, NULL, 5, NULL);
-
-#if CONFIG_HARDWARE_MODE_SENSOR
     TimerHandle_t xReadHandle;
 
     xTaskCreate(sendSensor, "SEND_SENSOR", 2048, NULL, tskIDLE_PRIORITY, &xSendSensorHandle);
@@ -507,6 +535,8 @@ esp_err_t esp_mesh_comm_mqtt_task_start(void)
     }
 
 #endif // CONFIG_HARDWARE_MODE_SENSOR
+    
+    xTaskCreate(check_button, "check button task", 3072, NULL, 5, NULL);
     return ESP_OK;
 }
 
@@ -514,6 +544,11 @@ void clear_credencial_wifi(void)
 {
     nvs_app_clear("ssid");
     nvs_app_clear("pass");
+}
+
+void clear_members(void){
+    nvs_app_clear("SW0000000001");
+    nvs_app_clear("SW0000000002");
 }
 
 // void registro_serial(){
@@ -535,6 +570,7 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     // clear_credencial_wifi();
+    clear_members();
     // registro_serial();
     serialNumber = (char *)calloc(13, sizeof(char));
     nvs_app_get("sn", serialNumber, 's');
