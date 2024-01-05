@@ -52,6 +52,7 @@ static bool root = false;
 
 esp_err_t mesh_check_cmd_app(uint8_t cmd, uint8_t *data);
 void mesh_app_got_ip(bool root);
+void mesh_app_connected(void);
 void mesh_app_disconnected(void);
 void mesh_send_root(char *data_to_send);
 void mesh_recv_app(char *data, uint16_t data_size);
@@ -355,6 +356,7 @@ void mesh_event_handler(void *arg, esp_event_base_t event_base,
         last_layer = mesh_layer;
         // mesh_connected_indicator(mesh_layer);
         mesh_netifs_start(esp_mesh_is_root());
+        mesh_app_connected();
     }
     break;
     case MESH_EVENT_PARENT_DISCONNECTED: {

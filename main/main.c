@@ -31,18 +31,6 @@
 #include "sensorZmpt101b.h"
 #include "sensorHall50.h"
 
-/*******************************************************
- *                Constants
- *******************************************************/
-
-static const char *TAG = "MAIN";
-static bool credencial_wifi = false;
-static char ssid[] = "MESHSSID";
-static char pass[] = "MESHPASSWORD";
-static esp_ip4_addr_t s_current_ip;
-static char addrMac[6*3+1]; // MAC addr size + terminator
-static char *serialNumber;
-static bool ativo = false;
 
 /*******************************************************
  *                Macros
@@ -65,10 +53,12 @@ static uint32_t timerSendSwitch = 10; //tempo em segundos
 #define TAG_AMPERE      "a"
 
 #endif
-
-#define TAG_NEWDEVICE   "nd"
-#define BUTTON_GPIO     13
-#define LED_GPIO        2 // 32
+#define STATUS_DISCONNECTED    'd'
+#define STATUS_CONNECTED       'c'
+#define STATUS_WAIT            'w'
+#define TAG_NEWDEVICE          "nd"
+#define BUTTON_GPIO             13
+#define LED_GPIO                2 // 32
 
 // commands for internal mesh communication:
 // <CMD> <PAYLOAD>, where CMD is one character, payload is variable dep. on command
@@ -77,14 +67,37 @@ static uint32_t timerSendSwitch = 10; //tempo em segundos
 // #define CMD_KEYPRESSED 0x55
 // // CMD_KEYPRESSED: payload is always 6 bytes identifying address of node sending keypress event
 
+/*******************************************************
+ *                Constants
+ *******************************************************/
+
+static const char *TAG = "MAIN";
+static bool credencial_wifi = false;
+static char ssid[] = "MESHSSID";
+static char pass[] = "MESHPASSWORD";
+static esp_ip4_addr_t s_current_ip;
+static char addrMac[6*3+1]; // MAC addr size + terminator
+static uint8_t *my_mac;
+static char *serialNumber;
+static bool ativo = false;
+static char statusConexao = STATUS_WAIT; //
+TaskHandle_t xBlinkStatusHandle;
+
 
 /*******************************************************
  *                Declarações
  *******************************************************/
 void esp_mesh_comm_mqtt_task_start(void);
 esp_err_t connected_mesh(void);
-void mesh_app_disconnected(void){}
 
+void   mesh_app_connected(void){
+    statusConexao = STATUS_CONNECTED;
+}
+
+void mesh_app_disconnected(void){
+    statusConexao = STATUS_DISCONNECTED;
+    vTaskResume(xBlinkStatusHandle);
+}
 
 char* extractJson(char *json, char *name)
 {
@@ -97,6 +110,10 @@ char* extractJson(char *json, char *name)
         tam = strlen(name);
         while (1){
             aux = strchr(aux, '\"');
+            if (aux==NULL){
+                ESP_LOGI(TAG, "Não encontrou");
+                return NULL;
+            }
             aux++;
             pos = strcspn(aux+1, "\"")+1;
             if ((pos == tam )&&(!strncmp(aux, name, tam))){
@@ -104,10 +121,6 @@ char* extractJson(char *json, char *name)
                 pos = strcspn(aux, "\"");
                 aux[pos] = '\0';
                 return aux;
-            }
-            if(strcspn(aux, "}") == 0){
-                ESP_LOGI(TAG, "Não encontrou");
-                return NULL;
             }
         }
     }
@@ -171,6 +184,7 @@ static void sendSensor(void *pvParameters)
         int tensao, corrente;
         ESP_LOGI(TAG, "Send mqtt lot!");
         for (int i = 1; i <= cont; i++){
+            // ESP_LOGW(TAG, "i: %d", i);
             strcpy(keyVoltagem, TAG_VOLTAGE);
             strcpy(keyAmperes, TAG_AMPERE);
             __itoa(i, &keyVoltagem[1], 10);
@@ -180,6 +194,7 @@ static void sendSensor(void *pvParameters)
             nvs_app_get(keyAmperes, &corrente, 'i');
             nvs_app_get(keyVoltagem, &tensao, 'i');
             sprintf(payload, "{\"sn\":\"%s\",\"%s\":%d,\"%s\":%d}", serialNumber ,TAG_VOLTAGE, tensao, TAG_AMPERE, corrente);
+            // ESP_LOGW(TAG, "Payload %s", payload);
             // mqtt_app_publish(topic, payload);
             mesh_send_app(1, &payload, strlen(payload));
             vTaskDelay(pdMS_TO_TICKS(500));
@@ -194,7 +209,7 @@ static void readSensor(void *pvParameters)
     sensorZmpt101b_config(SENSOR_GPIO2, sensorHall50_check());
     int cont = 0;
     char keyCont[5] = "cont";
-char keyVoltagem[5] = TAG_VOLTAGE;
+    char keyVoltagem[5] = TAG_VOLTAGE;
     char keyAmperes[5] = TAG_AMPERE;
 
     while (1)
@@ -295,7 +310,7 @@ void mesh_recv_app(char *data, uint16_t data_size){
                 data[2] = 'n';
                 data[3] = 'd';
                 data[data_size-1] = '\0';
-                asprintf(&data, "%s,\"sn\":\"%s\"}", data, serialNumber);
+                asprintf(&data, "{\"sn\":\"%s\",%s}", serialNumber, data+1);
                 // ESP_LOGW(TAG, "Como ficou %s", data);
             }
             mesh_send_root(data);
@@ -311,7 +326,6 @@ void mqtt_app_event_data(char *publish_string, int tam)
     strcpy(aux, publish_string);
     // char *aux = malloc(sizeof(char)*tam);
     // memcpy(aux, publish_string, tam);
-    // aux[tam] = '\0';
     char *dado;
     // ESP_LOGW(TAG, "Chegou mqtt - Mensagem:%s", aux);
     dado = extractJson(aux, "sn");
@@ -403,7 +417,7 @@ void mesh_app_got_ip(bool root)
 
 void mqtt_app_event_connected(void){
     char topic[33];
-    uint8_t *my_mac = (esp_mesh_is_root()) ? mesh_netif_get_ap_mac() : mesh_netif_get_station_mac();
+    // uint8_t *my_mac = (esp_mesh_is_root()) ? mesh_netif_get_ap_mac() : mesh_netif_get_station_mac();
     snprintf(addrMac, sizeof(addrMac),MACSTR, MAC2STR(my_mac));
     sprintf(topic, "mesh/%.*s/toDevice", 18, addrMac);
     mqtt_app_subscribe(topic);
@@ -433,11 +447,11 @@ static void initialise_gpio(void)
 void inicialize_blink(bool root)
 {
     ESP_LOGI(TAG, "device is %s", root ? "ROOT" : "NODE");
-    for(int i=0; i<9; i++){
-        gpio_set_level(LED_GPIO, i%2);
-        vTaskDelay(pdMS_TO_TICKS(750));
-    }
-    gpio_set_level(LED_GPIO, root);
+    // for(int i=0; i<9; i++){
+    //     gpio_set_level(LED_GPIO, i%2);
+    //     vTaskDelay(pdMS_TO_TICKS(750));
+    // }
+    // gpio_set_level(LED_GPIO, root);
 }
 
 bool check_button_root(void)
@@ -457,7 +471,7 @@ static void check_button(void* args)
     static char payload[54];
     static bool old_level = true;
     bool new_level;
-    uint8_t *my_mac = (esp_mesh_is_root()) ? mesh_netif_get_ap_mac() : mesh_netif_get_station_mac();
+    my_mac = (esp_mesh_is_root()) ? mesh_netif_get_ap_mac() : mesh_netif_get_station_mac();
     // snprintf(addrMac, sizeof(addrMac),MACSTR, MAC2STR(my_mac));
     sprintf(payload, "{\"sn\":\"%s\",\"layer\":\"%d\", \"IP\":\"" IPSTR "\"}", serialNumber, esp_mesh_get_layer(), IP2STR(&s_current_ip));
     // sprintf(topic, "mesh/%.*s/toDevice", 18, addrMac);
@@ -487,10 +501,11 @@ static void check_button(void* args)
 
  void esp_mesh_comm_mqtt_task_start(void)
 {    
+    statusConexao = STATUS_CONNECTED;
     char payload[54];
     // char *topic;
     s_current_ip = mesh_app_get_ip();
-    uint8_t *my_mac = (esp_mesh_is_root()) ? mesh_netif_get_ap_mac() : mesh_netif_get_station_mac();
+    my_mac = (esp_mesh_is_root()) ? mesh_netif_get_ap_mac() : mesh_netif_get_station_mac();
     snprintf(addrMac, sizeof(addrMac),MACSTR, MAC2STR(my_mac));
     // asprintf(&payload, "layer:%d IP:" IPSTR, esp_mesh_get_layer(), IP2STR(&s_current_ip));
     sprintf(&payload, "{\"sn\":\"%s\",\"m\":\"%.*s\"}", serialNumber, 18, addrMac);
@@ -555,10 +570,36 @@ void clear_members(void){
 //     nvs_app_set("sn", "SW0000000002", 's');
 // }
 
+static void blink_status(void *parameters){    
+    int ledLight=0, ledOff=0;
+    while(1){
+        switch (statusConexao){
+        case STATUS_DISCONNECTED:
+            ledLight = 750;
+            ledOff = 750;
+            break;
+        case STATUS_WAIT:
+            ledLight = 450;
+            ledOff = 750;
+            break;
+        case STATUS_CONNECTED:
+            if(mesh_app_is_root()) gpio_set_level(LED_GPIO, 1);
+            else gpio_set_level(LED_GPIO, 0);
+            vTaskSuspend(xBlinkStatusHandle);
+            continue;
+        }
+        gpio_set_level(LED_GPIO, 1);
+        vTaskDelay(pdMS_TO_TICKS(ledLight));
+        gpio_set_level(LED_GPIO, 0);
+        vTaskDelay(pdMS_TO_TICKS(ledOff));
+    }
+}
+
 void app_main(void)
 {
     // nvs_flash_erase();
     initialise_gpio();
+    xTaskCreate(blink_status, "BLINK_STATUS", 1024, NULL, tskIDLE_PRIORITY, &xBlinkStatusHandle);
     /*Conexão com WIFI*/
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -592,5 +633,6 @@ void app_main(void)
             }
         }
     }
+    statusConexao = STATUS_DISCONNECTED;
     mesh_app(ssid, pass);    
 }
