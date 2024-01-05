@@ -130,20 +130,6 @@ void mesh_send_app(int flagTo, uint8_t *data_to_send, uint16_t size){
             }
         }
         break;
-        
-    // case (2):
-    //     while(1){
-    //         if(s_route_table_size){
-    //             ESP_LOGW(TAG, "Entrou no s_route_table_size com:%s", (char*) data_to_send);
-    //             ESP_LOGW(TAG, "E com s_route_table_size de:%d", s_route_table_size);
-    //             data.size = size;
-    //             data.data = data_to_send;
-    //             mesh_addr_dest = mesh_root_addr;
-    //             break;
-    //         }
-    //         vTaskDelay(pdMS_TO_TICKS(100));
-    //     }
-    //     break;
     
     case (-1):
         if(size == 0){
@@ -180,6 +166,8 @@ void mesh_send_app(int flagTo, uint8_t *data_to_send, uint16_t size){
 
 void mesh_scan_done_handler(int num)
 {
+    static int8_t rssiRouter;
+    rssiRouter = -120;
     int i;
     int ie_len = 0;
     mesh_assoc_t assoc;
@@ -224,14 +212,14 @@ void mesh_scan_done_handler(int num)
                      record.ssid, MAC2STR(record.bssid), record.primary,
                      record.rssi);
             if(root){
-                if (record.primary != 8){
-                if (!strcmp(ssid_mesh, (char *) record.ssid)) {
+                if ((!strcmp(ssid_mesh, (char *) record.ssid)) && (rssiRouter<record.rssi)) {
+                    rssiRouter = record.rssi;
                     parent_found = true;
                     memcpy(&parent_record, &record, sizeof(record));
                     my_type = MESH_ROOT;
                     my_layer = MESH_ROOT_LAYER;
                     vTaskDelay(pdMS_TO_TICKS(2000));
-                }}
+                }
             }
         }
     }
@@ -269,6 +257,7 @@ void mesh_scan_done_handler(int num)
                      parent_assoc.assoc_cap, parent_assoc.layer2_cap,
                      MAC2STR(parent_record.bssid), parent_record.primary,
                      parent_record.rssi);
+            vTaskDelay(pdMS_TO_TICKS(1000));
             ESP_ERROR_CHECK(esp_mesh_set_parent(&parent, (mesh_addr_t *)&parent_assoc.mesh_id, my_type, my_layer));
         }
 
