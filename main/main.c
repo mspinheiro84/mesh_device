@@ -90,7 +90,7 @@ TaskHandle_t xBlinkStatusHandle;
 void esp_mesh_comm_mqtt_task_start(void);
 esp_err_t connected_mesh(void);
 
-void   mesh_app_connected(void){
+void mesh_app_connected(void){
     statusConexao = STATUS_CONNECTED;
 }
 
@@ -512,6 +512,8 @@ static void check_button(void* args)
     // asprintf(&topic, "mesh/%.*s/toCloud", 18, addrMac);
     ESP_LOGI(TAG, "Tried to publish %s", payload);
     mesh_send_app(1, &payload, strlen(payload));
+    // vTaskDelay(pdMS_TO_TICKS(100));
+    // mesh_send_app(1, &payload, strlen(payload));
 }
 
 

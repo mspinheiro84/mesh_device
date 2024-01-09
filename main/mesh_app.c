@@ -46,6 +46,8 @@ static SemaphoreHandle_t s_route_table_lock = NULL;
 static uint8_t s_mesh_tx_payload[CONFIG_MESH_ROUTE_TABLE_SIZE*6+1];
 static char ssid_mesh[20], pass_mesh[20];
 static mesh_addr_t mesh_root_addr;
+static TaskHandle_t xSendTableRouting;
+static uint8_t *my_mac = NULL;
 
 static bool root = false;
 // static esp_netif_t *netif_sta = NULL;
@@ -106,12 +108,12 @@ void static recv_cb(mesh_addr_t *from, mesh_data_t *data) //=======MESH_APP
 * se flagTo 2 root encaminhando instrução da internet para node
 */
 void mesh_send_app(int flagTo, uint8_t *data_to_send, uint16_t size){
-    uint8_t *my_mac;
     esp_err_t err;
     mesh_data_t data;
     data.proto = MESH_PROTO_BIN;
     data.tos = MESH_TOS_P2P;
     mesh_addr_t mesh_addr_dest;
+    // uint8_t *my_mac;
 
     switch (flagTo){
     case 1:
@@ -269,6 +271,14 @@ void mesh_scan_done_handler(int num)
     }
 }
 
+static void sendTableRouting(void *pvParameters)
+{
+    while (1){
+        ulTaskNotifyTake(pdTRUE, (TickType_t) portMAX_DELAY);
+        mesh_send_app(-1, NULL, 0);
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
 
 void mesh_event_handler(void *arg, esp_event_base_t event_base,
                         int32_t event_id, void *event_data)
@@ -300,7 +310,7 @@ void mesh_event_handler(void *arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "<MESH_EVENT_CHILD_CONNECTED>aid:%d, "MACSTR"",
                  child_connected->aid,
                  MAC2STR(child_connected->mac));
-        mesh_send_app(-1, NULL, 0);
+        xTaskNotifyGive(xSendTableRouting);
     }
     break;
     case MESH_EVENT_CHILD_DISCONNECTED: {
@@ -308,6 +318,7 @@ void mesh_event_handler(void *arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "<MESH_EVENT_CHILD_DISCONNECTED>aid:%d, "MACSTR"",
                  child_disconnected->aid,
                  MAC2STR(child_disconnected->mac));
+        xTaskNotifyGive(xSendTableRouting);
     }
     break;
     case MESH_EVENT_ROUTING_TABLE_ADD: {
@@ -343,9 +354,9 @@ void mesh_event_handler(void *arg, esp_event_base_t event_base,
                  esp_mesh_is_root() ? "<ROOT>" :
                  (mesh_layer == 2) ? "<layer2>" : "", MAC2STR(id.addr));
         last_layer = mesh_layer;
-        // mesh_connected_indicator(mesh_layer);
         mesh_netifs_start(esp_mesh_is_root());
         mesh_app_connected();
+        vTaskResume(xSendTableRouting);
     }
     break;
     case MESH_EVENT_PARENT_DISCONNECTED: {
@@ -508,8 +519,6 @@ void mesh_app(char ssid[], char pass[]){
     cfg.router.ssid_len = strlen((char *)ssid_mesh);
     strcpy((char *) &cfg.router.ssid, ssid_mesh);
     strcpy((char *) &cfg.router.password, pass_mesh);
-    // memcpy((uint8_t *) &cfg.router.ssid, ssid_mesh, cfg.router.ssid_len);
-    // memcpy((uint8_t *) &cfg.router.password, pass_mesh, strlen((char *)pass_mesh));
     /* mesh softAP */
     ESP_ERROR_CHECK(esp_mesh_set_ap_authmode(CONFIG_MESH_AP_AUTHMODE));
     cfg.mesh_ap.max_connection = CONFIG_MESH_AP_CONNECTIONS;
@@ -521,6 +530,7 @@ void mesh_app(char ssid[], char pass[]){
     ESP_ERROR_CHECK(esp_mesh_start());
     ESP_LOGI(TAG, "mesh starts successfully, heap:%" PRId32 ", %s\n",  esp_get_free_heap_size(),
              esp_mesh_is_root_fixed() ? "root fixed" : "root not fixed");   
-    s_route_table_lock = xSemaphoreCreateMutex(); 
-
+    s_route_table_lock = xSemaphoreCreateMutex();
+    xTaskCreate(sendTableRouting, "SEND_TABLE_ROUTING", 2048, NULL, tskIDLE_PRIORITY, &xSendTableRouting);
+    vTaskSuspend(xSendTableRouting);
 }

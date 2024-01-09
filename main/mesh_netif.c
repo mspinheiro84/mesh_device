@@ -391,7 +391,7 @@ esp_err_t mesh_netif_start_root_ap(bool is_root, uint32_t addr)
         esp_netif_attach(netif_ap, driver);
         set_dhcps_dns(netif_ap, addr);
         start_mesh_link_ap();
-        ip_napt_enable(g_mesh_netif_subnet_ip.ip.addr, 1);
+        ip_napt_enable(g_mesh_netif_subnet_ip.ip.addr, 1);        
     }
     return ESP_OK;
 }
