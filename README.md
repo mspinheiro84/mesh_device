@@ -19,13 +19,6 @@ Para os devices node basta liga-los que já estarão configurados como node. Par
 
 Qualquer uma das configurações de hardware, Sensor e Switch, podem ser definidos como root.
 
-
-## Como é feita a comunicação com o backend
-
-A comunicação entre o app mobile e o Esp32 é feita através do protocolo MQTT, com os payloads no formato de JSON, sob o endereço de broker "mqtt://mqtt.eclipseprojects.io", podendo ser alterado na componente mqtt_app.c.
-
-Ao conectar com a rede wifi o root subscreve no tópico "mesh/(MAC_do_root)/toDevice" e passa a publicar nele toda a comunicação dos dispositivos da rede mesh. O payload recebido e enviado são no formato JSON, com os seguintes chaves: **"sn"** - serial number, **"m"** - MAC, **"nd"** - new device, **"v"** - tensão, **"a"** - corrente, **"s"** - array de quatro bits para controlar reles.
-
 ## Hardware
 
 ### Hardware sensor
@@ -36,4 +29,19 @@ As leituras são realizadas e salvas a cada 5s e a cada 50 leituras todas elas s
 ### Hardware switch
 Tem a função de controlar equipamentos ligando ou desligando-o. Possui quatro pinos dedicados para o controle, pinos 27, 26, 25 e 33 sob os defines SWITCH_GPIO1, SWITCH_GPIO2, SWITCH_GPIO3 e SWITCH_GPIO4 respectivamente.
 
-A cada 10s são enviados o estado de cada pino. Para alterar o estado de um equipamento, de forma independente e sem alterar os outros, basta enviar **-**  na posição dos pinos que não se quer alterar. Por exemplo, ligar o equipamento 3 sem alterar os estados dos outros equipamentos: **--1-**.
+A cada 10s são enviados o estado de cada pino. Para alterar o estado de um equipamento, de forma independente e sem alterar os outros, basta enviar **"-"**  na posição dos pinos que não se quer alterar. Por exemplo, ligar o equipamento 3 sem alterar os estados dos outros equipamentos: **"--1-"**.
+
+
+## Como é feita a comunicação com o backend
+
+A comunicação entre o app mobile e o Esp32 é feita através do protocolo MQTT, com os payloads no formato de JSON, sob o endereço de broker "mqtt://mqtt.eclipseprojects.io", podendo ser alterado na componente mqtt_app.c.
+
+Ao conectar com a rede wifi o root subscreve no tópico "mesh/(MAC_do_root)/toDevice" e passa a publicar nele toda a comunicação dos dispositivos da rede mesh. O payload recebido e enviado são no formato JSON, com os seguintes chaves: **"sn"** - serial number, **"m"** - MAC, **"nd"** - new device - serial number do new device, **"v"** - tensão, **"a"** - corrente, **"s"** - array de quatro bits para controlar reles.
+
+## Adicionar novo device
+
+Ao ser ligado o device procurará a rede mesh ativa, ao encontrar se conectará e enviará uma mensagem para o root contendo seu **sn** e **m**, o root, por sua vez, enviará uma mensagem para o app mobile contendo seu **sn**, **nd** o sn do novo device e **m** do novo device. O novo device ficará esperando a autorização para começar a rodar. Esta autorização será confirmada quando o app mobile retornar **sn** e **m** dele. Quando ocorrer o root registra em memoria repassa a autorização para o device.
+![Novo device](/imagens/Novo-device.png)
+
+## Comunicação 
+
