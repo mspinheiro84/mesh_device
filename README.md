@@ -41,7 +41,6 @@ Ao conectar com a rede wifi o root subscreve no tópico "mesh/(MAC_do_root)/toDe
 ## Adicionar novo device
 
 Ao ser ligado o device procurará a rede mesh ativa, ao encontrar se conectará e enviará uma mensagem para o root contendo seu **sn** e **m**, o root, por sua vez, enviará uma mensagem para o app mobile contendo seu **sn**, **nd** o sn do novo device e **m** do novo device. O novo device ficará esperando a autorização para começar a rodar. Esta autorização será confirmada quando o app mobile retornar **sn** e **m** dele. Quando ocorrer o root registra em memoria repassa a autorização para o device.
-![Novo device](/imagens/Novo-device.png)
 
-## Comunicação 
+![Novo device](/imagens/Novo-device.png)
 
