@@ -1,6 +1,6 @@
 # _Sobre o projeto_
 
-Mesh device é um sistema desenvolvido para Esp32 afim de aplicar os conhecimentos adquiridos no curso "Aprenda programar o ESP32 com ESP-IDF" oferecido pela Embarcados.
+Mesh device é um sistema desenvolvido para Esp32 afim de aplicar os conhecimentos adquiridos no curso "Aprenda programar o ESP32 com ESP-IDF" oferecido pela Embarcados e sob mentoria do eng. de sistemas embarcados M.e. Fernandes Matias.
 
 O sistema Mesh device monitora a tensão e corrente de um ou mais equipamentos, através do Hardware Sensor, e atua no acionamento destes equipamentos, através do Hardware Switch. E todas as informações podem ser acompanhadas, assim como controladas, pelo app mobile.
 
@@ -31,12 +31,16 @@ Tem a função de controlar equipamentos ligando ou desligando-o. Possui quatro 
 
 A cada 10s são enviados o estado de cada pino. Para alterar o estado de um equipamento, de forma independente e sem alterar os outros, basta enviar **"-"**  na posição dos pinos que não se quer alterar. Por exemplo, ligar o equipamento 3 sem alterar os estados dos outros equipamentos: **"--1-"**.
 
+![Hardwares](/imagens/Hardware.png)
 
-## Como é feita a comunicação com o backend
+## Comunicação com o backend
 
 A comunicação entre o app mobile e o Esp32 é feita através do protocolo MQTT, com os payloads no formato de JSON, sob o endereço de broker "mqtt://mqtt.eclipseprojects.io", podendo ser alterado na componente mqtt_app.c.
 
-Ao conectar com a rede wifi o root subscreve no tópico "mesh/(MAC_do_root)/toDevice" e passa a publicar nele toda a comunicação dos dispositivos da rede mesh. O payload recebido e enviado são no formato JSON, com os seguintes chaves: **"sn"** - serial number, **"m"** - MAC, **"nd"** - new device - serial number do new device, **"v"** - tensão, **"a"** - corrente, **"s"** - array de quatro bits para controlar reles.
+Ao conectar com a rede wifi o root subscreve no tópico "mesh/(MAC_do_root)/toDevice", afim de receber comandos para os hardware switch, e passa a publicar nele toda as informações dos dispositivos da rede mesh. O payload recebido e enviado são no formato JSON, com os seguintes chaves: **"sn"** - serial number, **"m"** - MAC, **"nd"** - new device - serial number do new device, **"v"** - tensão, **"a"** - corrente, **"s"** - array de quatro bits para controlar reles.
+
+# Comunicação do Node
+O node envia para o root um JSON contendo seu **"sn"** e a informação que deseja publicar, ao recebe-lo o root publica no tópico, do servidor mqtt. Para o controle do device o root, subscrito no mesmo tópico que publica os status, recebe do app mobile um JSON com o **"sn"** do dispositivo que deseja controlar e seu comando. O root verifica se é para ele a mensagem recebida, caso não seja envia via broadcast o comando. O node que receber vai verificar se é o destinatário da mensagem e caso seja executa o comando.
 
 ## Adicionar novo device
 
